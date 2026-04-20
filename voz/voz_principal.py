@@ -11,6 +11,7 @@ def iniciar_conversa():
         # texto = converter_para_texto(fala)
         # resposta = processar_texto(texto)
         # falar_resposta(resposta)
+        pass
 
 
 """
