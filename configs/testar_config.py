@@ -1,6 +1,6 @@
 # testar_config.py
 import os
-import configuracoes
+import configs.configuracoes as configuracoes
 
 print("=== TESTANDO CONFIG ===")
 print()
