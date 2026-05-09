@@ -54,7 +54,7 @@ os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 
 
-# 2. CONFIGURAÇÕES DE OCR
+# 2. CONFIGURAÇÕES DE OCR(reconhecimento optico de caracteres)
 
 
 # Idioma do OCR
