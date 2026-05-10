@@ -1,12 +1,16 @@
-import tkinter as tk
 import pyautogui as auto
 from datetime import datetime
+import os
+import time
 
 '''
-Responsável por tirar o “print”
+CAPTURADOR DE TELA
 
-* Capturar tela inteira
-* Capturar regiões específicas
+Responsável por:
+- Capturar tela inteira
+- Capturar regiões específicas
+- Gerar nomes automáticos
+- Retornar caminhos das imagens
 '''
 
 PASTA_PRINTS = "Prints"
@@ -14,36 +18,58 @@ PASTA_PRINTS = "Prints"
 
 def gerar_nome_arquivo(tipo):
 
-    # Exemplo:
-    # tela-20260509-154230.png
-
     data = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    return f"{PASTA_PRINTS}/{tipo}-{data}.png"
+    nome = f"{tipo}-{data}.png"
+
+    return os.path.join(PASTA_PRINTS, nome)
+
+
+def obter_resolucao():
+
+    largura, altura = auto.size()
+
+    return largura, altura
 
 
 def capturar_tela():
 
     nome_arquivo = gerar_nome_arquivo("tela")
 
-    img = auto.screenshot()
+    imagem = auto.screenshot()
 
-    img.save(nome_arquivo)
+    imagem.save(nome_arquivo)
 
-    print(f"Tela salva em: {nome_arquivo}")
+    print(f"[CAPTURA] Tela salva: {nome_arquivo}")
+
+    return nome_arquivo
 
 
 def capturar_regiao(x, y, largura, altura):
-    root = tk.Tk()
 
-    largura_tela = root.winfo_screenwidth()
-    altura_tela = root.winfo_screenheight()
+    nome_arquivo = gerar_nome_arquivo("regiao")
 
-    print(f"{largura_tela}x{altura_tela}")
+    imagem = auto.screenshot(
+        region=(x, y, largura, altura)
+    )
 
-    root.destroy()
+    imagem.save(nome_arquivo)
 
-    return
+    print(f"[CAPTURA] Região salva: {nome_arquivo}")
 
-capturar_tela()
-capturar_regiao(0, 0, 100, 100)
+    return nome_arquivo
+
+
+# TESTES
+
+if __name__ == "__main__":
+
+    largura, altura = obter_resolucao()
+
+    print(f"Resolução: {largura}x{altura}")
+
+    time.sleep(7)
+
+    capturar_tela()
+
+    capturar_regiao(x, y, largura, altura)
