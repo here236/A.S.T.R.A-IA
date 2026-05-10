@@ -2,7 +2,7 @@ from pywinauto import Desktop
 import pytesseract
 from PIL import Image
 import pyautogui as auto
-from configs import configuracoes
+import configs.configuracoes as configuracoes
 
 
 
@@ -15,9 +15,7 @@ Responsável por:
 - Localizar regiões da tela
 '''
 
-pytesseract.pytesseract.tesseract_cmd = (
-    configuracoes.TESSERACT_PATH
-)
+pytesseract.pytesseract.tesseract_cmd = configuracoes.TESSERACT_PATH
 
 def detectar_elementos_ui():
 
@@ -120,7 +118,4 @@ def encontrar_elemento_por_texto(texto_busca, imagem=None):
 
             return elemento
 
-    return {
-    "status": False,
-    "erro": "Elemento não encontrado"
-    }
+    return None
