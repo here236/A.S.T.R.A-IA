@@ -22,5 +22,37 @@ def obter_dimensoes_janela():
 
     return left, top, largura, altura
 
-print("Handle:", obter_janela_ativa())
-print("Dimensões:", obter_dimensoes_janela())
+def listar_janelas():
+
+    janelas = []
+
+    def callback(hwnd, extra):
+
+        # Ignora janelas invisíveis
+        if not win32gui.IsWindowVisible(hwnd):
+            return
+
+        # Obtém o título da janela
+        titulo = win32gui.GetWindowText(hwnd)
+
+        # Ignora janelas sem título
+        if titulo == "":
+            return
+
+        # Salva as informações da janela
+        janelas.append({
+            "handle": hwnd,
+            "titulo": titulo
+        })
+
+    # Percorre todas as janelas abertas
+    win32gui.EnumWindows(callback, None)
+
+    return janelas
+
+print("\nJanelas abertas:\n")
+
+for janela in listar_janelas():
+    print(f'Handle: {janela["handle"]}')
+    print(f'Título: {janela["titulo"]}')
+    print("-" * 40)
