@@ -22,6 +22,9 @@ Integrados, os dois sistemas formam um assistente completo: o usuário fala um c
 ## Estrutura do projeto
 A.S.T.R.A-IA/
 ├── captura_tela/ # Captura de tela, detecção de elementos e OCR
+
 ├── voz/ # Reconhecimento de fala, NLP, diálogo e síntese de voz
+
 ├── configs/ # Configurações centralizadas do sistema
+
 └── main.py # Ponto de entrada
