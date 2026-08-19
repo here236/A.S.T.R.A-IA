@@ -18,6 +18,21 @@ def log(mensagem, tipo="INFO"):
     print(f"[{horario}] [{tipo}] {mensagem}")
 
 
+def carregar_imagem(caminho_imagem):
+    """
+    Carrega uma imagem do disco (caminho) como array do OpenCV.
+    Ponto único de entrada do pipeline de OCR — evita cada módulo
+    ler a imagem de um jeito diferente (PIL vs OpenCV).
+    """
+
+    imagem = cv2.imread(caminho_imagem)
+
+    if imagem is None:
+        log(f"Não foi possível carregar a imagem: {caminho_imagem}", "ERRO")
+
+    return imagem
+
+
 def converter_para_cinza(imagem):
     """
     Converte uma imagem colorida para escala de cinza.

@@ -1,110 +1,33 @@
-from pywinauto import Desktop
-import pytesseract
-from PIL import Image
-import pyautogui as auto
-import configs.configuracoes as configuracoes
-
-
+from .leitor_ocr import detectar_elementos_texto
 
 '''
 DETECTOR DE ELEMENTOS
 
 Responsável por:
-- Detectar elementos reais da interface
-- Usar OCR como fallback
-- Localizar regiões da tela
+- Detectar elementos de texto na tela (via OCR, ver leitor_ocr.py)
+- Buscar um elemento específico pelo texto
+
+Decisão de projeto: o detector usa só Tesseract OCR como fonte de
+elementos (sem UI Automation/pywinauto). Isso simplifica o formato de
+dado em um único padrão para o resto do projeto (RF03, RF04), ao custo
+de não detectar botões/ícones sem nenhum texto — ver ASTRA_Roadmap.md.
 '''
 
-pytesseract.pytesseract.tesseract_cmd = configuracoes.TESSERACT_PATH
 
-def detectar_elementos_ui():
+def detectar_elementos(imagem):
+    """
+    Detecta todos os elementos de texto presentes na imagem,
+    cada um com sua posição na tela.
+    """
 
-    elementos = []
-
-    try:
-
-        desktop = Desktop(backend="uia")
-
-        janela = Desktop(backend="uia").get_active()
-
-        controles = janela.descendants()
-
-        for controle in controles:
-
-            try:
-
-                rect = controle.rectangle()
-
-                elemento = {
-                    "tipo": controle.friendly_class_name(),
-                    "texto": controle.window_text(),
-                    "x": rect.left,
-                    "y": rect.top,
-                    "largura": rect.width(),
-                    "altura": rect.height(),
-                    "origem": "ui_automation"
-                }
-
-                elementos.append(elemento)
-
-            except:
-                pass
-
-    except Exception as erro:
-
-        print(f"[ERRO UI] {erro}")
-
-    return elementos
+    return detectar_elementos_texto(imagem)
 
 
-def detectar_elementos_ocr(imagem):
-
-    elementos = []
-
-    texto = pytesseract.image_to_data(
-        Image.open(imagem),
-        lang="por",
-        output_type=pytesseract.Output.DICT
-    )
-
-    total = len(texto["text"])
-
-    for i in range(total):
-
-        conteudo = texto["text"][i].strip()
-
-        if conteudo:
-
-            elemento = {
-                "tipo": "texto",
-                "texto": conteudo,
-                "x": texto["left"][i],
-                "y": texto["top"][i],
-                "largura": texto["width"][i],
-                "altura": texto["height"][i],
-                "origem": "ocr"
-            }
-
-            elementos.append(elemento)
-
-    return elementos
-
-
-def detectar_elementos(imagem=None):
-
-    # Primeiro tenta UI Automation
-    elementos = detectar_elementos_ui()
-
-    # Fallback OCR
-    if not elementos and imagem:
-
-        print("[INFO] UI Automation falhou. Executando OCR...")
-
-        elementos = detectar_elementos_ocr(imagem)
-
-    return elementos
-
-def encontrar_elemento_por_texto(texto_busca, imagem=None):
+def encontrar_elemento_por_texto(texto_busca, imagem):
+    """
+    Procura, entre os elementos detectados na imagem, o primeiro
+    cujo texto contenha 'texto_busca' (case-insensitive).
+    """
 
     elementos = detectar_elementos(imagem)
 
