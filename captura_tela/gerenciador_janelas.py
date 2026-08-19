@@ -50,9 +50,14 @@ def listar_janelas():
 
     return janelas
 
-print("\nJanelas abertas:\n")
 
-for janela in listar_janelas():
-    print(f'Handle: {janela["handle"]}')
-    print(f'Título: {janela["titulo"]}')
-    print("-" * 40)
+# Exemplo de uso — só roda se este arquivo for executado diretamente,
+# não quando outro módulo faz "import gerenciador_janelas".
+if __name__ == "__main__":
+
+    print("\nJanelas abertas:\n")
+
+    for janela in listar_janelas():
+        print(f'Handle: {janela["handle"]}')
+        print(f'Título: {janela["titulo"]}')
+        print("-" * 40)

@@ -1,5 +1,5 @@
-from captura_tela.captura_principal import (capturar_tela)
+from captura_tela.captura_principal import executar_captura
 
 if __name__ == "__main__":
 
-    pass 
+    executar_captura()

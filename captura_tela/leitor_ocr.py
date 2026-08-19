@@ -8,16 +8,15 @@ Converte imagem em texto
 * Tecnologia: Baseado em Tesseract OCR
 """
 
-from utilitarios import (
+from .utilitarios import (
     converter_para_cinza,
     converter_para_binario,
     redimensionar,
     log
 )
+from configs import configuracoes
 
-pytesseract.pytesseract.tesseract_cmd = (
-    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-)
+pytesseract.pytesseract.tesseract_cmd = configuracoes.TESSERACT_PATH
 
 
 def extrair_texto(imagem):

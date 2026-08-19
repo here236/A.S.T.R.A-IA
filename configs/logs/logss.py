@@ -1,5 +1,5 @@
 import logging
-import configuracoes
+from configs import configuracoes
 
 logging.basicConfig(
     filename=configuracoes.CAMINHO_LOG,
@@ -10,5 +10,8 @@ logging.basicConfig(
 logger = logging.getLogger("ASTRA")
 
 
-logger.info("Tela Capturada")
-logger.error("Elemento nãO encotrado")
+# Exemplo de uso — só roda se este arquivo for executado diretamente,
+# não quando outro módulo faz "import logss" pra pegar o logger configurado.
+if __name__ == "__main__":
+    logger.info("Tela Capturada")
+    logger.error("Elemento não encontrado")
