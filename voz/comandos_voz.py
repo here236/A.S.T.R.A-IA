@@ -269,8 +269,8 @@ class GerenciadorComandos:
         # Ajuste estes imports para os nomes que você
         # realmente está utilizando no projeto.
 
-        from .capturador_tela import capturar_tela
-        from .leitor_ocr import extrair_texto
+        from captura_tela.capturador_tela import capturar_tela
+        from captura_tela.leitor_ocr import extrair_texto
 
         imagem = capturar_tela()
 
