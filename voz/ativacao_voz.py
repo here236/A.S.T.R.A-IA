@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from datetime import datetime
 import difflib
-import re
 import time
-import unicodedata
+
+from .utilitarios_voz import normalizar_texto as _normalizar_texto
 
 """
 Módulo de ativação por voz da A.S.T.R.A.
@@ -87,35 +87,11 @@ class DetectorAtivacao:
         """
         Normaliza o texto recebido pelo reconhecimento de voz.
 
-        Remove:
-            - acentos
-            - caracteres especiais
-            - espaços duplicados
-
-        Também converte tudo para minúsculo.
+        Delega para utilitarios_voz.normalizar_texto (ponto único de
+        normalização do módulo de voz).
         """
 
-        if not texto:
-            return ""
-
-        texto = texto.lower().strip()
-
-        # Remove acentos.
-        texto = unicodedata.normalize("NFD", texto)
-
-        texto = "".join(
-            caractere
-            for caractere in texto
-            if unicodedata.category(caractere) != "Mn"
-        )
-
-        # Remove caracteres especiais.
-        texto = re.sub(r"[^a-z0-9\s]", " ", texto)
-
-        # Remove espaços duplicados.
-        texto = re.sub(r"\s+", " ", texto)
-
-        return texto.strip()
+        return _normalizar_texto(texto)
 
 
     # SIMILARIDADE

@@ -1,227 +1,121 @@
-import os
-import re
-
+from .utilitarios_voz import normalizar_texto
 
 '''
-    Entender o usuário
+    Conversa (fallback)
 
     Responsabilidade:
-    Interpretar intenção
-    Gerar resposta
-    Pode ser:
-    Regras simples
-    IA (chatbot)
+    Responder ao que NÃO é um comando conhecido.
+
+    Fluxo: voz_principal primeiro tenta comandos_voz.executar_comando().
+    Só se o resultado vier com status NAO_ENCONTRADO o texto chega aqui.
+
+    Este módulo NÃO reconhece nem executa comandos (isso é do
+    comandos_voz) e NÃO converte áudio em texto (isso é do
+    reconhecedor_fala).
+
+    Hoje responde por regras simples. É o ponto previsto para plugar
+    uma IA de conversa (LLM) depois: basta implementar _responder_com_ia.
 '''
 
-class Interpretador:
+
+RESPOSTA_PADRAO = (
+    "Não entendi. Diga ajuda para ouvir o que eu sei fazer."
+)
+
+RESPOSTA_VAZIA = "Não consegui entender o que você disse."
+
+
+class ProcessadorConversa:
 
     def __init__(self):
-        self.ultimo_texto = ""
-        self.ultima_intencao = "desconhecido"
-        self.ultimos_dados = {}
 
-        self.intencoes = {
-            "ler_tela": [
-                "leia a tela",
-                "ler a tela",
-                "leia minha tela",
-                "ler minha tela",
-                "o que está na tela",
-                "o que tem na tela"
-            ],
+        # Frases já sem acento: o texto passa por normalizar_texto
+        # antes da comparação.
+        self.conversas = [
+            (
+                ["bom dia"],
+                "Bom dia! Como posso ajudar?"
+            ),
+            (
+                ["boa tarde"],
+                "Boa tarde! Como posso ajudar?"
+            ),
+            (
+                ["boa noite"],
+                "Boa noite! Como posso ajudar?"
+            ),
+            (
+                ["ola", "oi", "e ai"],
+                "Olá! Como posso ajudar?"
+            ),
+            (
+                ["tudo bem", "como voce esta", "como vai voce"],
+                "Estou bem, obrigada por perguntar. Como posso ajudar?"
+            ),
+        ]
 
-            "abrir_navegador": [
-                "abra o navegador",
-                "abrir navegador",
-                "abra navegador",
-                "inicie o navegador"
-            ],
-
-            "fechar_navegador": [
-                "feche o navegador",
-                "fechar navegador",
-                "fecha o navegador"
-            ],
-
-            "ver_hora": [
-                "que horas são",
-                "que horas sao",
-                "qual é a hora",
-                "qual a hora",
-                "me diga as horas"
-            ],
-
-            "identidade": [
-                "quem é você",
-                "quem e voce",
-                "qual seu nome",
-                "qual o seu nome",
-                "o que você é",
-                "o que voce e"
-            ],
-
-            "agradecimento": [
-                "obrigado",
-                "obrigada",
-                "valeu",
-                "agradeço"
-            ],
-
-            "encerrar": [
-                "pode desligar",
-                "desligue",
-                "encerrar",
-                "encerre",
-                "até mais",
-                "ate mais",
-                "tchau"
-            ]
-        }
-
-    # Entrada
-
-    def processar(self, entrada):
+    def responder(self, texto):
         """
-        Processa texto ou áudio e retorna a intenção,
-        os dados identificados e a resposta.
+        Devolve a frase que a A.S.T.R.A. deve falar em resposta
+        a um texto que não era um comando.
         """
 
-        if isinstance(entrada, str):
-
-            if os.path.isfile(entrada):
-                texto = self.converter_audio_para_texto(entrada)
-            else:
-                texto = entrada
-
-        else:
-            texto = self.converter_audio_para_texto(entrada)
+        texto = normalizar_texto(texto)
 
         if not texto:
-            return {
-                "texto": "",
-                "intencao": "vazio",
-                "dados": {},
-                "resposta": "Não consegui entender o que você disse."
-            }
+            return RESPOSTA_VAZIA
 
-        texto = self.normalizar_texto(texto)
+        resposta = self._responder_por_regras(texto)
 
-        self.ultimo_texto = texto
+        if resposta:
+            return resposta
 
-        intencao = self.interpretar_texto(texto)
-        dados = self.extrair_dados(texto, intencao)
-        resposta = self.gerar_resposta(intencao, dados)
+        resposta = self._responder_com_ia(texto)
 
-        self.ultima_intencao = intencao
-        self.ultimos_dados = dados
+        if resposta:
+            return resposta
 
-        return {
-            "texto": texto,
-            "intencao": intencao,
-            "dados": dados,
-            "resposta": resposta
-        }
+        return RESPOSTA_PADRAO
 
-    # Áudio
-
-    def converter_audio_para_texto(self, audio):
+    def _responder_por_regras(self, texto):
         """
-        Converte o áudio recebido em texto.
-
-        O reconhecimento de voz pode ser conectado aqui
-        posteriormente usando Whisper ou outro modelo.
+        Respostas fixas para conversas simples (saudações etc.).
         """
 
-        if audio is None:
-            return ""
+        # Compara por palavra inteira, para "oi" não casar dentro
+        # de "foi" ou "boi".
+        texto_delimitado = f" {texto} "
 
-        return ""
-
-    # Normalização
-
-    def normalizar_texto(self, texto):
-        """
-        Padroniza o texto antes da interpretação.
-        """
-
-        texto = texto.lower()
-        texto = re.sub(r"\s+", " ", texto)
-        texto = texto.strip()
-
-        return texto
-
-    # Interpretação
-
-    def interpretar_texto(self, texto):
-        """
-        Identifica a intenção presente no texto.
-        """
-
-        for intencao, frases in self.intencoes.items():
+        for frases, resposta in self.conversas:
 
             for frase in frases:
 
-                if frase in texto:
-                    return intencao
+                if f" {frase} " in texto_delimitado:
+                    return resposta
 
-        return "desconhecido"
+        return None
 
-    # Extração de dados
-
-    def extrair_dados(self, texto, intencao):
+    def _responder_com_ia(self, texto):
         """
-        Extrai informações adicionais presentes no comando.
-        """
+        Ponto de integração com uma IA de conversa (LLM).
 
-        dados = {}
-
-        if "abra o site" in texto:
-
-            site = texto.replace("abra o site", "").strip()
-
-            if site:
-                dados["site"] = site
-
-        if "pesquise" in texto:
-
-            pesquisa = texto.split("pesquise", 1)[1].strip()
-
-            if pesquisa:
-                dados["pesquisa"] = pesquisa
-
-        numeros = re.findall(r"\d+", texto)
-
-        if numeros:
-            dados["numeros"] = [
-                int(numero)
-                for numero in numeros
-            ]
-
-        return dados
-
-    # Resposta
-
-    def gerar_resposta(self, intencao, dados=None):
-        """
-        Gera uma resposta baseada na intenção identificada.
+        Deve devolver a resposta como texto, ou None quando não
+        souber responder. Hoje não há IA conectada.
         """
 
-        if dados is None:
-            dados = {}
+        return None
 
-        respostas = {
-            "vazio": "Não consegui entender o que você disse.",
-            "ler_tela": "Vou analisar o conteúdo da tela.",
-            "abrir_navegador": "Abrindo o navegador.",
-            "fechar_navegador": "Fechando o navegador.",
-            "ver_hora": "Vou verificar o horário.",
-            "identidade": "Eu sou a A.S.T.R.A., sua assistente virtual.",
-            "agradecimento": "Por nada.",
-            "encerrar": "Tudo bem. Até mais.",
-            "desconhecido": "Não consegui entender esse comando."
-        }
 
-        return respostas.get(
-            intencao,
-            "Ainda não sei como responder a esse comando."
-        )
+# INSTÂNCIA PRINCIPAL
+
+processador_conversa = ProcessadorConversa()
+
+
+# FUNÇÃO PÚBLICA
+
+def responder_conversa(texto):
+    """
+    Função utilizada pelos outros módulos da A.S.T.R.A.
+    """
+
+    return processador_conversa.responder(texto)

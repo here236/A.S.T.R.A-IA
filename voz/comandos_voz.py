@@ -1,31 +1,37 @@
 import subprocess
 import webbrowser
-import unicodedata
-import re
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import Callable, Optional
+from urllib.parse import quote_plus
+
+from .utilitarios_voz import normalizar_texto
 
 """
 Ações específicas da A.S.T.R.A.
 
 Responsabilidade:
-    Interpretar comandos conhecidos e executar ações específicas.
+    Único reconhecedor de comandos do projeto: interpretar comandos
+    conhecidos e executar as ações correspondentes.
 
 Exemplos:
     "leia a tela"
     "abra o navegador"
-    "abra o bloco de notas"
-    "feche a janela"
+    "pesquise receita de bolo"
+    "que horas são"
 
 Este módulo NÃO é responsável por:
     - Reconhecimento de voz
     - OCR
-    - Inteligência artificial
+    - Inteligência artificial / conversa livre
     - Captura de áudio
 
 Ele recebe um texto já reconhecido e decide qual ação executar.
+Quando nenhum comando é reconhecido, o resultado vem com status
+NAO_ENCONTRADO e quem orquestra (voz_principal) pode encaminhar o
+texto para processador_linguagem, que cuida da conversa.
 """
 
 
@@ -38,48 +44,36 @@ class StatusComando(Enum):
 
 
 @dataclass
+class RespostaAcao:
+    """
+    O que uma ação devolve depois de executada.
+
+    fala:     frase pensada para ser FALADA ao usuário (TTS).
+    dados:    informação extra para quem chamou (ex: texto lido da tela).
+    encerrar: True quando a ação pede o fim da sessão (ex: "tchau").
+    """
+
+    fala: str = ""
+    dados: Optional[object] = None
+    encerrar: bool = False
+
+
+@dataclass
 class ResultadoComando:
     """
     Resultado da execução de um comando.
+
+    mensagem:        texto de log/depuração (NÃO é para falar em voz alta).
+    resposta_falada: o que o sintetizador de voz deve dizer ao usuário.
+    encerrar:        True quando a sessão deve terminar.
     """
 
     status: StatusComando
     comando: str = ""
     mensagem: str = ""
     dados: Optional[object] = None
-
-
-# NORMALIZAÇÃO
-
-def normalizar_texto(texto: str) -> str:
-    """
-    Normaliza o texto recebido.
-
-    Remove:
-        - letras maiúsculas
-        - acentos
-        - caracteres especiais
-        - espaços duplicados
-    """
-
-    if not texto:
-        return ""
-
-    texto = texto.lower().strip()
-
-    texto = unicodedata.normalize("NFD", texto)
-
-    texto = "".join(
-        caractere
-        for caractere in texto
-        if unicodedata.category(caractere) != "Mn"
-    )
-
-    texto = re.sub(r"[^a-z0-9\s]", " ", texto)
-
-    texto = re.sub(r"\s+", " ", texto)
-
-    return texto.strip()
+    resposta_falada: str = ""
+    encerrar: bool = False
 
 
 # DEFINIÇÃO DE UM COMANDO
@@ -88,11 +82,15 @@ def normalizar_texto(texto: str) -> str:
 class Comando:
     """
     Representa um comando que a A.S.T.R.A. sabe executar.
+
+    A função recebe o parâmetro falado depois da expressão que ativou
+    o comando. Ex: em "pesquise receita de bolo", o parâmetro é
+    "receita de bolo". Comandos sem parâmetro apenas ignoram o valor.
     """
 
     nome: str
     palavras_chave: list[str]
-    funcao: Callable
+    funcao: Callable[[str], RespostaAcao]
     descricao: str = ""
 
 
@@ -113,7 +111,7 @@ class GerenciadorComandos:
         self,
         nome: str,
         palavras_chave: list[str],
-        funcao: Callable,
+        funcao: Callable[[str], RespostaAcao],
         descricao: str = ""
     ):
         """
@@ -134,18 +132,23 @@ class GerenciadorComandos:
 
     def _registrar_comandos(self):
 
+        # Frases sem acento: o texto falado e as palavras-chave passam
+        # pela mesma normalização, então não é preciso cadastrar a
+        # versão com e sem acento.
+
         self.registrar(
             nome="ler_tela",
             palavras_chave=[
                 "leia a tela",
                 "ler a tela",
                 "leia minha tela",
+                "ler minha tela",
                 "o que tem na tela",
                 "o que esta na tela",
                 "descreva a tela"
             ],
             funcao=self.ler_tela,
-            descricao="Lê o conteúdo visível da tela."
+            descricao="Ler o conteúdo visível da tela."
         )
 
         self.registrar(
@@ -154,10 +157,11 @@ class GerenciadorComandos:
                 "abra o navegador",
                 "abrir o navegador",
                 "abra navegador",
+                "abrir navegador",
                 "inicie o navegador"
             ],
             funcao=self.abrir_navegador,
-            descricao="Abre o navegador padrão."
+            descricao="Abrir o navegador."
         )
 
         self.registrar(
@@ -169,7 +173,79 @@ class GerenciadorComandos:
                 "inicie o bloco de notas"
             ],
             funcao=self.abrir_bloco_notas,
-            descricao="Abre o Bloco de Notas."
+            descricao="Abrir o Bloco de Notas."
+        )
+
+        self.registrar(
+            nome="abrir_site",
+            palavras_chave=[
+                "abra o site",
+                "abrir o site"
+            ],
+            funcao=self.abrir_site,
+            descricao="Abrir um site. Diga, por exemplo: abra o site youtube."
+        )
+
+        self.registrar(
+            nome="pesquisar",
+            palavras_chave=[
+                "pesquise",
+                "pesquisar",
+                "busque",
+                "buscar"
+            ],
+            funcao=self.pesquisar,
+            descricao="Pesquisar na internet. Diga, por exemplo: pesquise receita de bolo."
+        )
+
+        self.registrar(
+            nome="ver_hora",
+            palavras_chave=[
+                "que horas sao",
+                "qual a hora",
+                "qual e a hora",
+                "me diga as horas"
+            ],
+            funcao=self.ver_hora,
+            descricao="Dizer as horas."
+        )
+
+        self.registrar(
+            nome="identidade",
+            palavras_chave=[
+                "quem e voce",
+                "qual seu nome",
+                "qual o seu nome",
+                "o que voce e"
+            ],
+            funcao=self.dizer_identidade,
+            descricao="Dizer quem eu sou."
+        )
+
+        self.registrar(
+            nome="agradecimento",
+            palavras_chave=[
+                "obrigado",
+                "obrigada",
+                "valeu",
+                "agradeco"
+            ],
+            funcao=self.responder_agradecimento,
+            descricao="Responder a um agradecimento."
+        )
+
+        self.registrar(
+            nome="encerrar",
+            palavras_chave=[
+                "pode desligar",
+                "desligue",
+                "encerrar",
+                "encerre",
+                "ate mais",
+                "tchau"
+            ],
+            funcao=self.encerrar,
+            descricao="Encerrar a conversa."
         )
 
         self.registrar(
@@ -177,26 +253,40 @@ class GerenciadorComandos:
             palavras_chave=[
                 "ajuda",
                 "o que voce pode fazer",
-                "o que você pode fazer",
-                "quais comandos voce conhece",
-                "quais comandos você conhece"
+                "quais comandos voce conhece"
             ],
             funcao=self.mostrar_ajuda,
-            descricao="Mostra os comandos disponíveis."
+            descricao="Listar o que eu sei fazer."
         )
 
 
     # LOCALIZAR COMANDO
 
-    def encontrar_comando(self, texto: str) -> Optional[Comando]:
+    def encontrar_comando(
+        self,
+        texto: str
+    ) -> tuple[Optional[Comando], str]:
+        """
+        Procura qual comando o texto pede.
+
+        Retorna (comando, expressão encontrada). Sem correspondência,
+        retorna (None, "").
+
+        A expressão encontrada é devolvida para que o parâmetro do
+        comando possa ser extraído do que veio depois dela.
+        """
 
         texto = normalizar_texto(texto)
 
         if not texto:
-            return None
+            return None, ""
+
+        # As palavras só casam inteiras: assim "ajuda" não dispara
+        # dentro de "ajudante", nem "valeu" dentro de outra palavra.
+        texto_delimitado = f" {texto} "
 
         melhor_comando = None
-        maior_pontuacao = 0
+        melhor_expressao = ""
 
         for comando in self.comandos:
 
@@ -204,18 +294,35 @@ class GerenciadorComandos:
 
                 palavra = normalizar_texto(palavra)
 
-                if palavra in texto:
+                if f" {palavra} " in texto_delimitado:
 
                     # Quanto maior a expressão encontrada,
                     # maior a prioridade.
-                    pontuacao = len(palavra)
+                    if len(palavra) > len(melhor_expressao):
 
-                    if pontuacao > maior_pontuacao:
-
-                        maior_pontuacao = pontuacao
+                        melhor_expressao = palavra
                         melhor_comando = comando
 
-        return melhor_comando
+        return melhor_comando, melhor_expressao
+
+
+    # PARÂMETRO
+
+    @staticmethod
+    def _extrair_parametro(texto: str, expressao: str) -> str:
+        """
+        Devolve o que foi falado depois da expressão do comando.
+
+        Usa a mesma regra de "palavra inteira" do encontrar_comando,
+        para não cortar o texto no lugar errado quando a expressão
+        também aparece dentro de outra palavra.
+        """
+
+        texto_delimitado = f" {normalizar_texto(texto)} "
+
+        inicio = texto_delimitado.index(f" {expressao} ") + 1
+
+        return texto_delimitado[inicio + len(expressao):].strip()
 
 
     # EXECUTAR
@@ -229,7 +336,7 @@ class GerenciadorComandos:
                 mensagem="Nenhum comando foi recebido."
             )
 
-        comando = self.encontrar_comando(texto)
+        comando, expressao = self.encontrar_comando(texto)
 
         if comando is None:
 
@@ -238,15 +345,21 @@ class GerenciadorComandos:
                 mensagem=f"Não reconheci o comando: {texto}"
             )
 
+        # Tudo que foi falado depois da expressão do comando
+        # ("pesquise receita de bolo" -> "receita de bolo").
+        parametro = self._extrair_parametro(texto, expressao)
+
         try:
 
-            dados = comando.funcao()
+            resposta = comando.funcao(parametro)
 
             return ResultadoComando(
                 status=StatusComando.SUCESSO,
                 comando=comando.nome,
                 mensagem=f"Comando '{comando.nome}' executado.",
-                dados=dados
+                dados=resposta.dados,
+                resposta_falada=resposta.fala,
+                encerrar=resposta.encerrar
             )
 
         except Exception as erro:
@@ -254,21 +367,22 @@ class GerenciadorComandos:
             return ResultadoComando(
                 status=StatusComando.ERRO,
                 comando=comando.nome,
-                mensagem=f"Erro ao executar '{comando.nome}': {erro}"
+                mensagem=f"Erro ao executar '{comando.nome}': {erro}",
+                resposta_falada="Não consegui executar esse comando."
             )
 
 
     # AÇÕES
 
-    def ler_tela(self):
+    def ler_tela(self, parametro: str = "") -> RespostaAcao:
         """
         Captura a tela e envia para o OCR.
         """
 
-        # IMPORTANTE:
-        # Ajuste estes imports para os nomes que você
-        # realmente está utilizando no projeto.
-
+        # Importados aqui dentro (e não no topo) porque carregar o
+        # módulo de captura exige tela e Tesseract instalados, e o
+        # reconhecimento de comandos não deveria depender disso para
+        # funcionar nem para ser testado.
         from captura_tela.capturador_tela import capturar_tela
         from captura_tela.leitor_ocr import extrair_texto
 
@@ -282,33 +396,129 @@ class GerenciadorComandos:
 
         texto = extrair_texto(imagem)
 
-        return texto
+        if not texto:
+
+            return RespostaAcao(
+                fala="Não encontrei nenhum texto na tela.",
+                dados=""
+            )
+
+        return RespostaAcao(fala=texto, dados=texto)
 
 
-    def abrir_navegador(self):
+    def abrir_navegador(self, parametro: str = "") -> RespostaAcao:
 
         webbrowser.open(
             "https://www.google.com"
         )
 
-        return True
+        return RespostaAcao(fala="Abrindo o navegador.")
 
 
-    def abrir_bloco_notas(self):
+    def abrir_bloco_notas(self, parametro: str = "") -> RespostaAcao:
 
         subprocess.Popen(
             ["notepad.exe"]
         )
 
-        return True
+        return RespostaAcao(fala="Abrindo o Bloco de Notas.")
 
 
-    def mostrar_ajuda(self):
+    def abrir_site(self, parametro: str = "") -> RespostaAcao:
 
-        return [
+        # Aceita "youtube" ou "youtube.com" (a fala já vem sem pontuação,
+        # então quem diz o domínio completo costuma ficar com ele
+        # separado por espaço; juntamos tudo).
+        site = parametro.replace(" ", "")
+
+        if not site:
+
+            return RespostaAcao(fala="Qual site você quer abrir?")
+
+        if "." not in site:
+
+            site = f"{site}.com"
+
+        webbrowser.open(f"https://www.{site}")
+
+        return RespostaAcao(
+            fala=f"Abrindo o site {parametro}.",
+            dados=site
+        )
+
+
+    def pesquisar(self, parametro: str = "") -> RespostaAcao:
+
+        if not parametro:
+
+            return RespostaAcao(fala="O que você quer pesquisar?")
+
+        webbrowser.open(
+            f"https://www.google.com/search?q={quote_plus(parametro)}"
+        )
+
+        return RespostaAcao(
+            fala=f"Pesquisando {parametro}.",
+            dados=parametro
+        )
+
+
+    def ver_hora(self, parametro: str = "") -> RespostaAcao:
+
+        agora = datetime.now()
+
+        hora = agora.hour
+        minuto = agora.minute
+
+        palavra_hora = "hora" if hora == 1 else "horas"
+
+        if minuto == 0:
+
+            fala = f"Agora são {hora} {palavra_hora} em ponto."
+
+        else:
+
+            palavra_minuto = "minuto" if minuto == 1 else "minutos"
+
+            fala = (
+                f"Agora são {hora} {palavra_hora} "
+                f"e {minuto} {palavra_minuto}."
+            )
+
+        return RespostaAcao(fala=fala, dados=agora)
+
+
+    def dizer_identidade(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(
+            fala="Eu sou a A.S.T.R.A., sua assistente virtual."
+        )
+
+
+    def responder_agradecimento(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala="Por nada.")
+
+
+    def encerrar(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(
+            fala="Tudo bem. Até mais.",
+            encerrar=True
+        )
+
+
+    def mostrar_ajuda(self, parametro: str = "") -> RespostaAcao:
+
+        descricoes = [
             comando.descricao
             for comando in self.comandos
         ]
+
+        return RespostaAcao(
+            fala="Eu posso: " + " ".join(descricoes),
+            dados=descricoes
+        )
 
 
 # INSTÂNCIA PRINCIPAL
