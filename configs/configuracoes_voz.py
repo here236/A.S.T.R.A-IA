@@ -29,6 +29,25 @@ LIMITE_DURACAO_FALA = 15
 
 # Quantos segundos de silêncio ambiente calibrar antes de escutar,
 # pra distinguir ruído de fundo de fala de verdade.
-DURACAO_CALIBRACAO_RUIDO = 1
+DURACAO_CALIBRACAO_RUIDO = 1 
+
+
+# CONFIRMAÇÃO DE AÇÕES CRÍTICAS (RN03)
+# Lógica em voz/confirmacao_voz.py
+
+# Segundos que a A.S.T.R.A. espera pelo "sim" ou "não" antes de
+# desistir e cancelar a ação sozinha.
+TEMPO_LIMITE_CONFIRMACAO = 15
+
+# Quantas vezes repete a pergunta quando não entende a resposta.
+# Depois disso, cancela por segurança.
+TENTATIVAS_CONFIRMACAO = 1
+
+# Palavras sem acento (o texto passa por normalizar_texto).
+# Se aparecer palavra dos dois lados ("sim, não"), vale o CANCELAR.
+PALAVRAS_CONFIRMAR = ["sim", "confirmo", "confirmar", "confirmado", "pode", "positivo"]
+
+PALAVRAS_CANCELAR = ["nao", "cancela", "cancele", "cancelar", "negativo", "deixa", "esquece"]
+
 
 os.makedirs(PASTA_AUDIOS, exist_ok=True)
