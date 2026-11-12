@@ -89,7 +89,7 @@ class ModeloNaoEncontradoError(Exception):
     """
     O modelo de reconhecimento de fala ainda não foi baixado.
     É um problema de instalação (não de fala), por isso é uma exceção
-    e não um texto vazio: assim não se confunde com "ninguém falou".
+    e não um texto vazio
     """
 
 
