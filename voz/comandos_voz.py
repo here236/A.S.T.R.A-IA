@@ -9,6 +9,7 @@ from urllib.parse import quote_plus
 
 from .utilitarios_voz import normalizar_texto
 
+from .confirmacao_voz import Decisao, GerenciadorConfirmacao
 """
 Ações específicas da A.S.T.R.A.
 
@@ -41,7 +42,8 @@ class StatusComando(Enum):
     SUCESSO = "sucesso"
     NAO_ENCONTRADO = "nao_encontrado"
     ERRO = "erro"
-
+    AGUARDANDO_CONFIRMACAO = "aguardando_confirmacao"
+    CANCELADO = "cancelado"
 
 @dataclass
 class RespostaAcao:
@@ -93,6 +95,10 @@ class Comando:
     funcao: Callable[[str], RespostaAcao]
     descricao: str = ""
 
+    # RN03: ação crítica só executa depois de confirmação por voz.
+    critico: bool = False
+    pergunta_confirmacao: str = ""
+
 
 # GERENCIADOR DE COMANDOS
 
@@ -101,6 +107,9 @@ class GerenciadorComandos:
     def __init__(self):
 
         self.comandos: list[Comando] = []
+
+        # RN03: controle das confirmações (voz/confirmacao_voz.py)
+        self.confirmacao = GerenciadorConfirmacao()
 
         self._registrar_comandos()
 
@@ -112,7 +121,9 @@ class GerenciadorComandos:
         nome: str,
         palavras_chave: list[str],
         funcao: Callable[[str], RespostaAcao],
-        descricao: str = ""
+        descricao: str = "",
+        critico: bool = False,
+        pergunta_confirmacao: str = ""
     ):
         """
         Registra um novo comando.
@@ -122,7 +133,9 @@ class GerenciadorComandos:
             nome=nome,
             palavras_chave=palavras_chave,
             funcao=funcao,
-            descricao=descricao
+            descricao=descricao,
+            critico=critico,
+            pergunta_confirmacao=pergunta_confirmacao
         )
 
         self.comandos.append(comando)
@@ -162,6 +175,23 @@ class GerenciadorComandos:
             ],
             funcao=self.abrir_navegador,
             descricao="Abrir o navegador."
+        )
+        
+        self.registrar(
+            nome="fechar_navegador",
+            palavras_chave=[
+                "feche o navegador",
+                "fechar o navegador",
+                "feche navegador",
+                "fechar navegador"
+            ],
+            funcao=self.fechar_navegador,
+            descricao="Fechar o navegador.",
+            critico=True,
+            pergunta_confirmacao=(
+                "Tem certeza que quer fechar o navegador? "
+                "Diga sim ou não."
+            )
         )
 
         self.registrar(
@@ -328,7 +358,12 @@ class GerenciadorComandos:
     # EXECUTAR
 
     def executar(self, texto: str) -> ResultadoComando:
+        
+        # RN03: se há ação crítica esperando, este texto é a resposta dela (inclusive texto vazio = não entendi).
+        if self.confirmacao.aguardando():
 
+            return self._tratar_confirmacao(texto)
+        
         if not texto:
 
             return ResultadoComando(
@@ -348,6 +383,54 @@ class GerenciadorComandos:
         # Tudo que foi falado depois da expressão do comando
         # ("pesquise receita de bolo" -> "receita de bolo").
         parametro = self._extrair_parametro(texto, expressao)
+
+        # RN03: ação crítica não executa agora, pede confirmação.
+        if comando.critico:
+
+            self.confirmacao.pedir(comando, parametro)
+
+            return ResultadoComando(
+                status=StatusComando.AGUARDANDO_CONFIRMACAO,
+                comando=comando.nome,
+                mensagem=f"Aguardando confirmação de '{comando.nome}'.",
+                resposta_falada=(
+                    comando.pergunta_confirmacao
+                    or "Tem certeza? Diga sim ou não."
+                )
+            )
+
+        return self._executar_comando(comando, parametro)
+
+    def _tratar_confirmacao(self, texto: str) -> ResultadoComando:
+
+        resposta = self.confirmacao.responder(texto)
+
+        comando = resposta.acao.comando
+
+        if resposta.decisao == Decisao.CONFIRMADA:
+
+            return self._executar_comando(
+                comando,
+                resposta.acao.parametro
+            )
+
+        if resposta.decisao == Decisao.REPETIR:
+            status = StatusComando.AGUARDANDO_CONFIRMACAO
+        else:
+            status = StatusComando.CANCELADO
+
+        return ResultadoComando(
+            status=status,
+            comando=comando.nome,
+            mensagem=resposta.mensagem,
+            resposta_falada=resposta.fala
+        )
+
+    def _executar_comando(
+        self,
+        comando: Comando,
+        parametro: str
+    ) -> ResultadoComando:
 
         try:
 
@@ -413,7 +496,28 @@ class GerenciadorComandos:
         )
 
         return RespostaAcao(fala="Abrindo o navegador.")
+    
+    def fechar_navegador(self, parametro: str = "") -> RespostaAcao:
 
+        fechou_algum = False
+
+        for processo in ("chrome.exe", "msedge.exe", "firefox.exe", "brave.exe"):
+
+            resultado = subprocess.run(
+                ["taskkill", "/IM", processo],
+                capture_output=True
+            )
+
+            if resultado.returncode == 0:
+                fechou_algum = True
+
+        if not fechou_algum:
+
+            return RespostaAcao(
+                fala="Não encontrei nenhum navegador aberto."
+            )
+
+        return RespostaAcao(fala="Navegador fechado.")
 
     def abrir_bloco_notas(self, parametro: str = "") -> RespostaAcao:
 
@@ -534,3 +638,10 @@ def executar_comando(texto: str) -> ResultadoComando:
     """
 
     return gerenciador_comandos.executar(texto)
+
+def aguardando_confirmacao() -> bool:
+    """
+    RN03: True se a A.S.T.R.A. espera um "sim"/"não" do usuário.
+    """
+
+    return gerenciador_comandos.confirmacao.aguardando()
