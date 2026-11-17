@@ -10,6 +10,9 @@ from urllib.parse import quote_plus
 from .utilitarios_voz import normalizar_texto
 
 from .confirmacao_voz import Decisao, GerenciadorConfirmacao
+
+from .arquivos_voz import gerenciador_arquivos
+
 """
 Ações específicas da A.S.T.R.A.
 
@@ -44,6 +47,7 @@ class StatusComando(Enum):
     ERRO = "erro"
     AGUARDANDO_CONFIRMACAO = "aguardando_confirmacao"
     CANCELADO = "cancelado"
+
 
 @dataclass
 class RespostaAcao:
@@ -96,8 +100,13 @@ class Comando:
     descricao: str = ""
 
     # RN03: ação crítica só executa depois de confirmação por voz.
+    # pergunta_confirmacao é a frase falada para pedir isso.
     critico: bool = False
     pergunta_confirmacao: str = ""
+
+    # True: o parâmetro chega COMO FOI FALADO (com acento e maiúscula),
+    # em vez de normalizado. Usado quando o texto vai para um arquivo.
+    texto_livre: bool = False
 
 
 # GERENCIADOR DE COMANDOS
@@ -123,10 +132,13 @@ class GerenciadorComandos:
         funcao: Callable[[str], RespostaAcao],
         descricao: str = "",
         critico: bool = False,
-        pergunta_confirmacao: str = ""
+        pergunta_confirmacao: str = "",
+        texto_livre: bool = False
     ):
         """
         Registra um novo comando.
+
+        critico=True faz o comando exigir confirmação por voz (RN03).
         """
 
         comando = Comando(
@@ -135,7 +147,8 @@ class GerenciadorComandos:
             funcao=funcao,
             descricao=descricao,
             critico=critico,
-            pergunta_confirmacao=pergunta_confirmacao
+            pergunta_confirmacao=pergunta_confirmacao,
+            texto_livre=texto_livre
         )
 
         self.comandos.append(comando)
@@ -176,7 +189,7 @@ class GerenciadorComandos:
             funcao=self.abrir_navegador,
             descricao="Abrir o navegador."
         )
-        
+
         self.registrar(
             nome="fechar_navegador",
             palavras_chave=[
@@ -190,6 +203,211 @@ class GerenciadorComandos:
             critico=True,
             pergunta_confirmacao=(
                 "Tem certeza que quer fechar o navegador? "
+                "Diga sim ou não."
+            )
+        )
+
+        self.registrar(
+            nome="criar_pasta",
+            palavras_chave=[
+                "crie a pasta",
+                "criar pasta",
+                "crie pasta",
+                "crie uma pasta",
+                "nova pasta"
+            ],
+            funcao=self.criar_pasta,
+            descricao="Criar uma pasta. Diga, por exemplo: crie a pasta fotos."
+        )
+
+        self.registrar(
+            nome="criar_documento",
+            palavras_chave=[
+                "crie um documento",
+                "crie um arquivo word",
+                "crie um word",
+                "novo arquivo word",
+                "criar documento",
+                "crie documento",
+                "novo documento"
+            ],
+            funcao=self.criar_documento,
+            descricao="Criar um documento do Word."
+        )
+
+        self.registrar(
+            nome="criar_planilha",
+            palavras_chave=[
+                "crie uma planilha",
+                "crie um arquivo excel",
+                "crie um excel",
+                "novo arquivo excel",
+                "criar planilha",
+                "crie planilha",
+                "nova planilha"
+            ],
+            funcao=self.criar_planilha,
+            descricao=(
+                "Criar uma planilha do Excel. Pode dizer: crie uma "
+                "planilha vendas com as colunas nome, idade e cidade."
+            ),
+            texto_livre=True
+        )
+
+        self.registrar(
+            nome="embelezar_planilha",
+            palavras_chave=[
+                "deixe a planilha bonita",
+                "deixar a planilha bonita",
+                "deixe a planilha mais bonita",
+                "embeleze a planilha",
+                "formate a planilha",
+                "aplique o tema",
+                "mude o tema"
+            ],
+            funcao=self.embelezar_planilha,
+            descricao=(
+                "Deixar a planilha bonita. Pode dizer o tema: azul, "
+                "verde, vermelho, laranja, roxo ou cinza."
+            )
+        )
+
+        self.registrar(
+            nome="somar_coluna",
+            palavras_chave=[
+                "some a coluna",
+                "somar a coluna",
+                "total da coluna"
+            ],
+            funcao=self.somar_coluna,
+            descricao="Somar uma coluna da planilha. Diga: some a coluna quantidade."
+        )
+
+        self.registrar(
+            nome="criar_texto",
+            palavras_chave=[
+                "crie um arquivo de texto",
+                "criar arquivo de texto",
+                "novo arquivo de texto",
+                "crie um texto"
+            ],
+            funcao=self.criar_texto,
+            descricao="Criar um arquivo de texto simples."
+        )
+
+        self.registrar(
+            nome="criar_apresentacao",
+            palavras_chave=[
+                "crie uma apresentacao",
+                "criar apresentacao",
+                "nova apresentacao",
+                "crie um powerpoint",
+                "crie um power point"
+            ],
+            funcao=self.criar_apresentacao,
+            descricao="Criar uma apresentação do PowerPoint."
+        )
+
+        self.registrar(
+            nome="adicionar_slide",
+            palavras_chave=[
+                "adicione um slide",
+                "adicionar slide",
+                "novo slide",
+                "crie um slide"
+            ],
+            funcao=self.adicionar_slide,
+            descricao="Adicionar um slide. Diga: adicione um slide, e o título.",
+            texto_livre=True
+        )
+
+        self.registrar(
+            nome="adicionar_linha",
+            palavras_chave=[
+                "adicione a linha",
+                "adicione uma linha",
+                "adicionar linha",
+                "nova linha"
+            ],
+            funcao=self.adicionar_linha,
+            descricao="Adicionar uma linha na planilha. Diga: adicione a linha, e os valores separados por vírgula.",
+            texto_livre=True
+        )
+
+        self.registrar(
+            nome="escrever_texto",
+            palavras_chave=[
+                "escreva",
+                "escrever"
+            ],
+            funcao=self.escrever_texto,
+            descricao="Escrever no arquivo em uso. Diga: escreva, e o texto.",
+            texto_livre=True
+        )
+
+        self.registrar(
+            nome="escrever_celula",
+            palavras_chave=[
+                "escreva na celula",
+                "escrever na celula"
+            ],
+            funcao=self.escrever_celula,
+            descricao="Escrever numa célula da planilha. Diga: escreva na célula b2 e o valor.",
+            texto_livre=True
+        )
+
+        self.registrar(
+            nome="ler_arquivo",
+            palavras_chave=[
+                "leia o documento",
+                "ler o documento",
+                "leia a planilha",
+                "ler a planilha",
+                "leia o arquivo"
+            ],
+            funcao=self.ler_arquivo,
+            descricao="Ler o arquivo em uso."
+        )
+
+        self.registrar(
+            nome="usar_arquivo",
+            palavras_chave=[
+                "abra o arquivo",
+                "use o arquivo",
+                "edite o arquivo",
+                "abra o documento",
+                "abra a planilha"
+            ],
+            funcao=self.usar_arquivo,
+            descricao="Escolher o arquivo em uso. Diga: abra o arquivo, e o nome."
+        )
+
+        self.registrar(
+            nome="listar_arquivos",
+            palavras_chave=[
+                "liste os arquivos",
+                "listar arquivos",
+                "listar os arquivos",
+                "quais arquivos eu tenho"
+            ],
+            funcao=self.listar_arquivos,
+            descricao="Listar os arquivos. Diga, por exemplo: liste os arquivos em documentos."
+        )
+
+        self.registrar(
+            nome="excluir",
+            palavras_chave=[
+                "exclua",
+                "excluir",
+                "apague",
+                "apagar",
+                "delete"
+            ],
+            funcao=self.excluir,
+            descricao="Excluir um arquivo ou pasta, mandando para a lixeira.",
+            critico=True,
+            pergunta_confirmacao=(
+                "Tem certeza que quer excluir {parametro}? "
                 "Diga sim ou não."
             )
         )
@@ -317,6 +535,7 @@ class GerenciadorComandos:
 
         melhor_comando = None
         melhor_expressao = ""
+        melhor_posicao = None
 
         for comando in self.comandos:
 
@@ -324,14 +543,28 @@ class GerenciadorComandos:
 
                 palavra = normalizar_texto(palavra)
 
-                if f" {palavra} " in texto_delimitado:
+                posicao = texto_delimitado.find(f" {palavra} ")
 
-                    # Quanto maior a expressão encontrada,
-                    # maior a prioridade.
-                    if len(palavra) > len(melhor_expressao):
+                if posicao == -1:
+                    continue
 
-                        melhor_expressao = palavra
-                        melhor_comando = comando
+                # O comando que aparece PRIMEIRO na frase vence. Assim,
+                # em "escreva obrigado" quem manda é o "escreva", e não
+                # o "obrigado" que faz parte do texto ditado. Se dois
+                # começam no mesmo ponto, vence a expressão maior
+                # ("escreva na celula" ganha de "escreva").
+                if (
+                    melhor_posicao is None
+                    or posicao < melhor_posicao
+                    or (
+                        posicao == melhor_posicao
+                        and len(palavra) > len(melhor_expressao)
+                    )
+                ):
+
+                    melhor_posicao = posicao
+                    melhor_expressao = palavra
+                    melhor_comando = comando
 
         return melhor_comando, melhor_expressao
 
@@ -355,15 +588,39 @@ class GerenciadorComandos:
         return texto_delimitado[inicio + len(expressao):].strip()
 
 
+    @staticmethod
+    def _extrair_parametro_livre(texto: str, expressao: str) -> str:
+        """
+        Como _extrair_parametro, mas devolve o que veio depois da
+        expressão no texto ORIGINAL (com acento, maiúscula e pontuação).
+        """
+
+        palavras = texto.split()
+        alvo = expressao.split()
+
+        for i in range(len(palavras) - len(alvo) + 1):
+
+            trecho = [
+                normalizar_texto(p)
+                for p in palavras[i:i + len(alvo)]
+            ]
+
+            if trecho == alvo:
+                return " ".join(palavras[i + len(alvo):]).strip()
+
+        return GerenciadorComandos._extrair_parametro(texto, expressao)
+
+
     # EXECUTAR
 
     def executar(self, texto: str) -> ResultadoComando:
-        
-        # RN03: se há ação crítica esperando, este texto é a resposta dela (inclusive texto vazio = não entendi).
+
+        # RN03: se há ação crítica esperando, este texto é a resposta
+        # dela (inclusive texto vazio = não entendi).
         if self.confirmacao.aguardando():
 
             return self._tratar_confirmacao(texto)
-        
+
         if not texto:
 
             return ResultadoComando(
@@ -382,7 +639,10 @@ class GerenciadorComandos:
 
         # Tudo que foi falado depois da expressão do comando
         # ("pesquise receita de bolo" -> "receita de bolo").
-        parametro = self._extrair_parametro(texto, expressao)
+        if comando.texto_livre:
+            parametro = self._extrair_parametro_livre(texto, expressao)
+        else:
+            parametro = self._extrair_parametro(texto, expressao)
 
         # RN03: ação crítica não executa agora, pede confirmação.
         if comando.critico:
@@ -396,10 +656,11 @@ class GerenciadorComandos:
                 resposta_falada=(
                     comando.pergunta_confirmacao
                     or "Tem certeza? Diga sim ou não."
-                )
+                ).format(parametro=parametro)
             )
 
         return self._executar_comando(comando, parametro)
+
 
     def _tratar_confirmacao(self, texto: str) -> ResultadoComando:
 
@@ -425,6 +686,7 @@ class GerenciadorComandos:
             mensagem=resposta.mensagem,
             resposta_falada=resposta.fala
         )
+
 
     def _executar_comando(
         self,
@@ -496,8 +758,16 @@ class GerenciadorComandos:
         )
 
         return RespostaAcao(fala="Abrindo o navegador.")
-    
+
+
     def fechar_navegador(self, parametro: str = "") -> RespostaAcao:
+        """
+        Ação crítica (RN03): só chega aqui depois da confirmação.
+
+        Sem /F, o taskkill pede o fechamento em vez de matar o
+        processo, dando ao navegador a chance de avisar sobre dados
+        não salvos.
+        """
 
         fechou_algum = False
 
@@ -518,6 +788,85 @@ class GerenciadorComandos:
             )
 
         return RespostaAcao(fala="Navegador fechado.")
+
+
+    def criar_pasta(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.criar_pasta(parametro))
+
+
+    def criar_documento(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.criar_documento(parametro))
+
+
+    def criar_planilha(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.criar_planilha(parametro))
+
+
+    def embelezar_planilha(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.embelezar_planilha(parametro))
+
+
+    def somar_coluna(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.somar_coluna(parametro))
+
+
+    def criar_texto(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.criar_texto(parametro))
+
+
+    def criar_apresentacao(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.criar_apresentacao(parametro))
+
+
+    def adicionar_slide(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.adicionar_slide(parametro))
+
+
+    def adicionar_linha(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.adicionar_linha(parametro))
+
+
+    def escrever_texto(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.escrever_texto(parametro))
+
+
+    def escrever_celula(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.escrever_celula(parametro))
+
+
+    def ler_arquivo(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.ler_atual())
+
+
+    def usar_arquivo(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.usar_arquivo(parametro))
+
+
+    def listar_arquivos(self, parametro: str = "") -> RespostaAcao:
+
+        return RespostaAcao(fala=gerenciador_arquivos.listar(parametro))
+
+
+    def excluir(self, parametro: str = "") -> RespostaAcao:
+        """
+        Ação crítica (RN03): só chega aqui depois da confirmação.
+        """
+
+        return RespostaAcao(fala=gerenciador_arquivos.excluir(parametro))
+
 
     def abrir_bloco_notas(self, parametro: str = "") -> RespostaAcao:
 
@@ -638,6 +987,7 @@ def executar_comando(texto: str) -> ResultadoComando:
     """
 
     return gerenciador_comandos.executar(texto)
+
 
 def aguardando_confirmacao() -> bool:
     """
