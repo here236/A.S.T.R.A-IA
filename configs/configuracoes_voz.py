@@ -29,26 +29,7 @@ LIMITE_DURACAO_FALA = 15
 
 # Quantos segundos de silêncio ambiente calibrar antes de escutar,
 # pra distinguir ruído de fundo de fala de verdade.
-DURACAO_CALIBRACAO_RUIDO = 1 
-
-
-# CONFIRMAÇÃO DE AÇÕES CRÍTICAS (RN03)
-# Lógica em voz/confirmacao_voz.py
-
-# Segundos que a A.S.T.R.A. espera pelo "sim" ou "não" antes de
-# desistir e cancelar a ação sozinha.
-TEMPO_LIMITE_CONFIRMACAO = 15
-
-# Quantas vezes repete a pergunta quando não entende a resposta.
-# Depois disso, cancela por segurança.
-TENTATIVAS_CONFIRMACAO = 1
-
-# Palavras sem acento (o texto passa por normalizar_texto).
-# Se aparecer palavra dos dois lados ("sim, não"), vale o CANCELAR.
-PALAVRAS_CONFIRMAR = ["sim", "confirmo", "confirmar", "confirmado", "pode", "positivo"]
-
-PALAVRAS_CANCELAR = ["nao", "cancela", "cancele", "cancelar", "negativo", "deixa", "esquece"]
-
+DURACAO_CALIBRACAO_RUIDO = 1
 
 # RECONHECIMENTO DE FALA (voz -> texto, 100% offline)
 
@@ -81,6 +62,41 @@ BEAM_SIZE_STT = 1
 # deste valor) são descartados. Evita o Whisper "inventar" frases em
 # cima de ruído ou silêncio.
 LIMIAR_SEM_FALA = 0.6
+
+
+# SÍNTESE DE VOZ (texto -> voz, 100% offline, com o Piper)
+
+# As vozes ficam em "modelos/voz/<nome>/", fora do Git.
+PASTA_VOZES = os.path.join(PASTA_MODELOS, "voz")
+
+# Vozes disponíveis. Para baixar a voz escolhida (uma vez, com internet):
+#     python -m voz.baixar_voz
+# "revisao" fixa a versão exata da voz, para ela não mudar sem você saber.
+VOZES_PIPER = {
+    "razo": {
+        "repositorio": "Lucasllfs/Razo-piper-voice",
+        "revisao": "0f95a8d49045ef58a2dc6745b4f5e15db908e4aa",
+        "modelo": "pt-BR-razo-medium.onnx",
+        "config": "config.json",
+    },
+}
+
+# Voz usada pela assistente (uma das chaves de VOZES_PIPER).
+VOZ_TTS = "razo"
+
+# 1.0 = velocidade normal. 0.8 = mais devagar, 1.3 = mais rápido.
+# O Piper aceita de 0.5 a 2.0.
+VELOCIDADE_FALA = 1.0
+
+# De 0.0 (mudo) a 1.0 (máximo).
+VOLUME_FALA = 1.0
+
+# Silêncio, em segundos, entre uma frase e a seguinte.
+PAUSA_ENTRE_FRASES = 0.15
+
+# Máximo de caracteres falados de uma vez. Um texto maior é cortado ao
+# final de uma frase. None = sem limite.
+LIMITE_CARACTERES_FALA = None
 
 
 os.makedirs(PASTA_AUDIOS, exist_ok=True)
