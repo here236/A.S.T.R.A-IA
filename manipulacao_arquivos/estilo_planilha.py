@@ -4,7 +4,8 @@ from datetime import date, datetime
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import column_index_from_string, get_column_letter
 
-from .utilitarios_voz import normalizar_texto
+from voz.utilitarios_voz import normalizar_texto
+
 
 """
 Aparência das planilhas (Excel).
