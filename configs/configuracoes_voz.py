@@ -32,26 +32,7 @@ LIMITE_DURACAO_FALA = 15
 
 # Quantos segundos de silêncio ambiente calibrar antes de escutar,
 # pra distinguir ruído de fundo de fala de verdade.
-DURACAO_CALIBRACAO_RUIDO = 1 
-
-
-# CONFIRMAÇÃO DE AÇÕES CRÍTICAS (RN03)
-# Lógica em voz/confirmacao_voz.py
-
-# Segundos que a A.S.T.R.A. espera pelo "sim" ou "não" antes de
-# desistir e cancelar a ação sozinha.
-TEMPO_LIMITE_CONFIRMACAO = 15
-
-# Quantas vezes repete a pergunta quando não entende a resposta.
-# Depois disso, cancela por segurança.
-TENTATIVAS_CONFIRMACAO = 1
-
-# Palavras sem acento (o texto passa por normalizar_texto).
-# Se aparecer palavra dos dois lados ("sim, não"), vale o CANCELAR.
-PALAVRAS_CONFIRMAR = ["sim", "confirmo", "confirmar", "confirmado", "pode", "positivo"]
-
-PALAVRAS_CANCELAR = ["nao", "cancela", "cancele", "cancelar", "negativo", "deixa", "esquece"]
-
+DURACAO_CALIBRACAO_RUIDO = 1
 
 # RECONHECIMENTO DE FALA (voz -> texto, 100% offline)
 
@@ -76,6 +57,16 @@ TIPO_COMPUTACAO_STT = "int8"
 # Idioma que o Whisper deve esperar ("pt-BR" -> "pt").
 IDIOMA_STT = IDIOMA.split("-")[0]
 
+# Dica de vocabulário para o Whisper: texto de exemplo que ele usa como
+# "contexto" e que o faz escrever "Astra" do jeito certo, em vez de "Aster",
+# "Hasta" ou "já está". Medido com a voz da Razo (voz sintética, não humana):
+#   "Ok Astra." sozinho: reconhecido em 0 de 10 sem a dica e em 10 de 10 com ela;
+#   frases variadas:     7 de 10 sem a dica e 10 de 10 com ela;
+#   e nenhum "Astra" inventado em silêncio, ruído branco, zumbido ou fala alheia.
+# Mantenha curto. None desliga. Para conferir de novo depois de mexer aqui:
+#     python -m voz.autoteste
+DICA_VOCABULARIO_STT = "Ok Astra."
+
 # 1 = mais rápido. Valores maiores (ex: 5) podem acertar um pouco mais,
 # mas demoram mais para transcrever.
 BEAM_SIZE_STT = 1
@@ -84,6 +75,86 @@ BEAM_SIZE_STT = 1
 # deste valor) são descartados. Evita o Whisper "inventar" frases em
 # cima de ruído ou silêncio.
 LIMIAR_SEM_FALA = 0.6
+
+
+# SÍNTESE DE VOZ (texto -> voz, 100% offline, com o Piper)
+
+# As vozes ficam em "modelos/voz/<nome>/", fora do Git.
+PASTA_VOZES = os.path.join(PASTA_MODELOS, "voz")
+
+# Vozes disponíveis. Para baixar a voz escolhida (uma vez, com internet):
+#     python -m voz.baixar_voz
+# "revisao" fixa a versão exata da voz, para ela não mudar sem você saber.
+VOZES_PIPER = {
+    "razo": {
+        "repositorio": "Lucasllfs/Razo-piper-voice",
+        "revisao": "0f95a8d49045ef58a2dc6745b4f5e15db908e4aa",
+        "modelo": "pt-BR-razo-medium.onnx",
+        "config": "config.json",
+    },
+}
+
+# Voz usada pela assistente (uma das chaves de VOZES_PIPER).
+VOZ_TTS = "razo"
+
+# 1.0 = velocidade normal. 0.8 = mais devagar, 1.3 = mais rápido.
+# O Piper aceita de 0.5 a 2.0.
+VELOCIDADE_FALA = 1.0
+
+# De 0.0 (mudo) a 1.0 (máximo).
+VOLUME_FALA = 1.0
+
+# Silêncio, em segundos, entre uma frase e a seguinte.
+PAUSA_ENTRE_FRASES = 0.15
+
+# Máximo de caracteres falados de uma vez. Um texto maior é cortado ao
+# final de uma frase. None = sem limite.
+LIMITE_CARACTERES_FALA = None
+
+
+# CONFIRMAÇÃO DE AÇÕES CRÍTICAS (RN03)
+
+# O texto falado e as palavras abaixo passam pela mesma normalização
+# (sem acento, sem maiúsculas), então basta escrever de um jeito só.
+# Na dúvida ("sim, não") a ação é cancelada: o cancelamento tem prioridade.
+PALAVRAS_CONFIRMAR = [
+    "sim",
+    "pode",
+    "pode sim",
+    "confirmo",
+    "confirmar",
+    "isso",
+    "claro",
+    "positivo",
+    "afirmativo",
+]
+
+PALAVRAS_CANCELAR = [
+    "nao",
+    "cancela",
+    "cancele",
+    "cancelar",
+    "negativo",
+    "esquece",
+    "deixa pra la",
+]
+
+# Segundos que a assistente espera pelo "sim" ou "não". Cada nova
+# tentativa recomeça a contagem, e o tempo precisa ser maior que a pergunta
+# falada + a escuta + a transcrição.
+TEMPO_LIMITE_CONFIRMACAO = 20
+
+# Quantas vezes ela repete a pergunta ao não entender, antes de cancelar
+# por segurança.
+TENTATIVAS_CONFIRMACAO = 2
+
+
+# PRIVACIDADE DO ÁUDIO (RN08)
+
+# Cada trecho ouvido é gravado em "Audios/" só para ser transcrito. Com False
+# (padrão) o arquivo é apagado logo depois de transcrito. Use True apenas
+# para depurar o reconhecimento de fala.
+MANTER_AUDIOS = False
 
 
 os.makedirs(PASTA_AUDIOS, exist_ok=True)

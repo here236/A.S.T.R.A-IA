@@ -35,7 +35,7 @@ def _gerar_nome_arquivo():
     return os.path.join(configuracoes_voz.PASTA_AUDIOS, nome)
 
 
-def ouvir_microfone():
+def ouvir_microfone(calibrar=True, silencioso=False):
     """
     Grava um trecho de fala do microfone padrão do sistema.
 
@@ -44,6 +44,14 @@ def ouvir_microfone():
     padrão do captura_tela: arquivo com nome baseado em timestamp)
     e devolve o caminho do arquivo.
 
+    calibrar:   mede o ruído ambiente antes de escutar (leva cerca de 1 s,
+                durante o qual qualquer fala atrapalha a medida). Quem
+                escuta o tempo todo calibra só na primeira vez e passa
+                False nas seguintes.
+    silencioso: não escreve no log o "Ouvindo..." nem o aviso de que
+                ninguém falou (senão o log enche a cada poucos segundos
+                quando se escuta o tempo todo). Erros continuam no log.
+
     Devolve None se não detectar nenhuma fala a tempo, ou se não
     encontrar microfone.
     """
@@ -51,14 +59,18 @@ def ouvir_microfone():
     try:
         with sr.Microphone() as fonte:
 
-            log("Calibrando ruído ambiente...")
+            if calibrar:
 
-            _recognizer.adjust_for_ambient_noise(
-                fonte,
-                duration=configuracoes_voz.DURACAO_CALIBRACAO_RUIDO
-            )
+                if not silencioso:
+                    log("Calibrando ruído ambiente...")
 
-            log("Ouvindo... pode falar.")
+                _recognizer.adjust_for_ambient_noise(
+                    fonte,
+                    duration=configuracoes_voz.DURACAO_CALIBRACAO_RUIDO
+                )
+
+            if not silencioso:
+                log("Ouvindo... pode falar.")
 
             audio = _recognizer.listen(
                 fonte,
@@ -67,7 +79,10 @@ def ouvir_microfone():
             )
 
     except sr.WaitTimeoutError:
-        log("Nenhuma fala detectada a tempo.", "AVISO")
+
+        if not silencioso:
+            log("Nenhuma fala detectada a tempo.", "AVISO")
+
         return None
 
     except OSError as erro:
@@ -80,7 +95,8 @@ def ouvir_microfone():
     with open(caminho_arquivo, "wb") as arquivo:
         arquivo.write(audio.get_wav_data())
 
-    log(f"Áudio capturado: {caminho_arquivo}")
+    if not silencioso:
+        log(f"Áudio capturado: {caminho_arquivo}")
 
     return caminho_arquivo
 
@@ -183,6 +199,11 @@ def converter_fala_para_texto(audio):
             # que mais evita o Whisper inventar texto em cima de ruído.
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 500},
+            # "Astra" é uma palavra rara e o Whisper a escreve pelo som
+            # ("Aster", "Hasta", "já está"), o que impede o "Ok Astra" de
+            # ser reconhecido. Esta dica o faz preferir a grafia certa.
+            # None desliga.
+            initial_prompt=getattr(configuracoes_voz, "DICA_VOCABULARIO_STT", None),
             # Cada gravação é um comando curto e independente: usar o
             # que foi dito antes só aumentaria o risco de repetições.
             condition_on_previous_text=False

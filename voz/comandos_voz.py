@@ -48,7 +48,6 @@ class StatusComando(Enum):
     AGUARDANDO_CONFIRMACAO = "aguardando_confirmacao"
     CANCELADO = "cancelado"
 
-
 @dataclass
 class RespostaAcao:
     """
@@ -108,6 +107,83 @@ class Comando:
     # em vez de normalizado. Usado quando o texto vai para um arquivo.
     texto_livre: bool = False
 
+# VARIANTES DE VERBO
+
+# Pelo mesmo motivo, o verbo chega em formas diferentes: "abra o site" foi
+# escrito "abre o site" e "abro o site". Cada grupo reúne as formas de um
+# verbo, e uma frase que começa por uma delas vale para todas.
+GRUPOS_DE_VERBOS = [
+    ["abra", "abre", "abro", "abrir"],
+    ["feche", "fecha", "fecho", "fechar"],
+    ["pesquise", "pesquisa", "pesquiso", "pesquisar"],
+    ["busque", "busca", "busco", "buscar"],
+    ["procure", "procura", "procuro", "procurar"],
+    ["leia", "le", "leio", "ler"],
+    ["inicie", "inicia", "inicio", "iniciar"],
+    ["descreva", "descreve", "descrevo", "descrever"],
+]
+
+
+def variantes_de_verbo(frase: str) -> list[str]:
+    """
+    Devolve a frase (já normalizada) com cada forma do verbo inicial:
+    "abra o site" -> "abra o site", "abre o site", "abro o site",
+    "abrir o site". Se não começa por um verbo conhecido, devolve só ela.
+    """
+
+    palavras = frase.split()
+
+    if not palavras:
+        return [frase]
+
+    for grupo in GRUPOS_DE_VERBOS:
+
+        if palavras[0] in grupo:
+
+            resto = " ".join(palavras[1:])
+
+            variantes = []
+
+            for forma in [palavras[0]] + [g for g in grupo if g != palavras[0]]:
+
+                variantes.append(f"{forma} {resto}".strip())
+
+            return variantes
+
+    return [frase]
+
+
+# VARIANTES DE ARTIGO
+
+# O reconhecimento de fala troca "o" por "um" (e "a" por "uma") com
+# facilidade: em teste, "abra o navegador" foi escrito "abra um navegador".
+# Para cada frase cadastrada, aceita-se também a troca e a versão sem artigo.
+ARTIGOS = {"o": "um", "a": "uma"}
+
+
+def variantes_de_artigo(frase: str) -> list[str]:
+    """
+    Devolve a frase (já normalizada) e suas variantes de artigo:
+    "abra o navegador" -> "abra o navegador", "abra um navegador",
+    "abra navegador". Sem artigo, devolve só a própria frase.
+    """
+
+    palavras = frase.split()
+
+    if not any(p in ARTIGOS for p in palavras):
+        return [frase]
+
+    trocada = " ".join(ARTIGOS.get(p, p) for p in palavras)
+    sem_artigo = " ".join(p for p in palavras if p not in ARTIGOS)
+
+    variantes = [frase]
+
+    for v in (trocada, sem_artigo):
+        if v and v not in variantes:
+            variantes.append(v)
+
+    return variantes
+
 
 # GERENCIADOR DE COMANDOS
 
@@ -137,13 +213,24 @@ class GerenciadorComandos:
     ):
         """
         Registra um novo comando.
-
-        critico=True faz o comando exigir confirmação por voz (RN03).
+           critico=True faz o comando exigir confirmação por voz (RN03).
         """
+        
+
+        expandidas = []
+
+        for frase in palavras_chave:
+
+            for com_verbo in variantes_de_verbo(normalizar_texto(frase)):
+
+                for variante in variantes_de_artigo(com_verbo):
+
+                    if variante and variante not in expandidas:
+                        expandidas.append(variante)
 
         comando = Comando(
             nome=nome,
-            palavras_chave=palavras_chave,
+            palavras_chave=expandidas,
             funcao=funcao,
             descricao=descricao,
             critico=critico,
@@ -171,7 +258,12 @@ class GerenciadorComandos:
                 "ler minha tela",
                 "o que tem na tela",
                 "o que esta na tela",
-                "descreva a tela"
+                "descreva a tela",
+                "le a tela",
+                "le minha tela",
+                "leia tela",
+                "ler tela",
+                "descreve a tela"
             ],
             funcao=self.ler_tela,
             descricao="Ler o conteúdo visível da tela."
@@ -184,19 +276,25 @@ class GerenciadorComandos:
                 "abrir o navegador",
                 "abra navegador",
                 "abrir navegador",
-                "inicie o navegador"
+                "inicie o navegador",
+                "abre o navegador",
+                "abre navegador",
+                "inicia o navegador",
+                "iniciar o navegador"
             ],
             funcao=self.abrir_navegador,
             descricao="Abrir o navegador."
         )
-
+        
         self.registrar(
             nome="fechar_navegador",
             palavras_chave=[
                 "feche o navegador",
                 "fechar o navegador",
                 "feche navegador",
-                "fechar navegador"
+                "fechar navegador",
+                "fecha o navegador",
+                "fecha navegador"
             ],
             funcao=self.fechar_navegador,
             descricao="Fechar o navegador.",
@@ -418,7 +516,12 @@ class GerenciadorComandos:
                 "abra o bloco de notas",
                 "abrir bloco de notas",
                 "abra o bloco notas",
-                "inicie o bloco de notas"
+                "inicie o bloco de notas",
+                "abre o bloco de notas",
+                "abra bloco de notas",
+                "abre bloco de notas",
+                "abrir o bloco de notas",
+                "inicia o bloco de notas"
             ],
             funcao=self.abrir_bloco_notas,
             descricao="Abrir o Bloco de Notas."
@@ -428,7 +531,11 @@ class GerenciadorComandos:
             nome="abrir_site",
             palavras_chave=[
                 "abra o site",
-                "abrir o site"
+                "abrir o site",
+                "abre o site",
+                "abra site",
+                "abre site",
+                "abrir site"
             ],
             funcao=self.abrir_site,
             descricao="Abrir um site. Diga, por exemplo: abra o site youtube."
@@ -440,7 +547,11 @@ class GerenciadorComandos:
                 "pesquise",
                 "pesquisar",
                 "busque",
-                "buscar"
+                "buscar",
+                "pesquisa",
+                "busca",
+                "procure",
+                "procura"
             ],
             funcao=self.pesquisar,
             descricao="Pesquisar na internet. Diga, por exemplo: pesquise receita de bolo."
@@ -614,13 +725,12 @@ class GerenciadorComandos:
     # EXECUTAR
 
     def executar(self, texto: str) -> ResultadoComando:
-
-        # RN03: se há ação crítica esperando, este texto é a resposta
-        # dela (inclusive texto vazio = não entendi).
+        
+        # RN03: se há ação crítica esperando, este texto é a resposta dela (inclusive texto vazio = não entendi).
         if self.confirmacao.aguardando():
 
             return self._tratar_confirmacao(texto)
-
+        
         if not texto:
 
             return ResultadoComando(
@@ -661,7 +771,6 @@ class GerenciadorComandos:
 
         return self._executar_comando(comando, parametro)
 
-
     def _tratar_confirmacao(self, texto: str) -> ResultadoComando:
 
         resposta = self.confirmacao.responder(texto)
@@ -686,7 +795,6 @@ class GerenciadorComandos:
             mensagem=resposta.mensagem,
             resposta_falada=resposta.fala
         )
-
 
     def _executar_comando(
         self,
@@ -758,8 +866,7 @@ class GerenciadorComandos:
         )
 
         return RespostaAcao(fala="Abrindo o navegador.")
-
-
+    
     def fechar_navegador(self, parametro: str = "") -> RespostaAcao:
         """
         Ação crítica (RN03): só chega aqui depois da confirmação.
@@ -987,7 +1094,6 @@ def executar_comando(texto: str) -> ResultadoComando:
     """
 
     return gerenciador_comandos.executar(texto)
-
 
 def aguardando_confirmacao() -> bool:
     """
