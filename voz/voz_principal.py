@@ -270,6 +270,15 @@ class AssistenteVoz:
         Executa o comando e monta o que dizer.
         """
 
+        # Planejamento explícito: não intercepta comandos legados nem confirmações.
+        from voz.utilitarios_voz import normalizar_texto
+        if not self._aguardando_confirmacao() and normalizar_texto(texto).startswith("planeje "):
+            fala = self._conversar(texto)
+            self._confirmacao_em_andamento = self._aguardando_confirmacao()
+            if not self._confirmacao_em_andamento:
+                self.detector.desativar()
+            return Saida(fala)
+
         resultado = self._executar(texto)
 
         if resultado.status == StatusComando.NAO_ENCONTRADO:

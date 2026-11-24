@@ -39,6 +39,7 @@ class AcaoPendente:
     parametro: str
     momento: float
     tentativas_restantes: int
+    origem_ia: bool = False
 
 
 @dataclass
@@ -89,7 +90,7 @@ class GerenciadorConfirmacao:
 
         self._pendente: Optional[AcaoPendente] = None
 
-    def pedir(self, comando: Any, parametro: str = ""):
+    def pedir(self, comando: Any, parametro: str = "", *, origem_ia=False):
         """
         Guarda a ação crítica e começa a esperar a confirmação.
         """
@@ -98,7 +99,8 @@ class GerenciadorConfirmacao:
             comando = comando,
             parametro = parametro,
             momento = time.monotonic(),
-            tentativas_restantes = configuracoes_voz.TENTATIVAS_CONFIRMACAO
+            tentativas_restantes = configuracoes_voz.TENTATIVAS_CONFIRMACAO,
+            origem_ia = origem_ia
         )
 
     def aguardando(self) -> bool:
@@ -133,7 +135,11 @@ class GerenciadorConfirmacao:
 
         pendente = self._pendente
 
-        resposta = interpretar_confirmacao(texto)
+        if pendente.origem_ia:
+            frase = normalizar_texto(texto)
+            resposta = True if frase == "sim" else False if frase in {"nao", "cancelar"} else None
+        else:
+            resposta = interpretar_confirmacao(texto)
 
         if resposta is True:
 

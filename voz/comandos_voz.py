@@ -197,6 +197,20 @@ class GerenciadorComandos:
         self.confirmacao = GerenciadorConfirmacao()
 
         self._registrar_comandos()
+        self._registrar_comandos_extras()
+
+        # Catálogo unificado: os comandos tradicionais continuam sendo
+        # reconhecidos pelo fluxo antigo, mas também passam a ser
+        # descritos em um registro independente para futuras chamadas da IA.
+        from ferramentas import RegistroFerramentas, ExecutorFerramentas
+
+        self.registro_ferramentas = RegistroFerramentas()
+        for comando in self.comandos:
+            self.registro_ferramentas.registrar_comando(comando)
+
+        self.executor_ferramentas = ExecutorFerramentas(
+            self, self.registro_ferramentas
+        )
 
 
     # REGISTRO
@@ -623,6 +637,41 @@ class GerenciadorComandos:
         )
 
 
+    def _registrar_comandos_extras(self):
+        """Registra capacidades de pesquisa que estavam declaradas à parte.
+
+        Entradas duplicadas são ignoradas. Comandos extras que apontam para
+        métodos inexistentes no gerenciador de arquivos não são ativados.
+        """
+        from pesquisa.comandos_arquivos_pesquisa import COMANDOS as EXTRAS
+
+        nomes_existentes = {comando.nome for comando in self.comandos}
+
+        for item in EXTRAS:
+            nome = item["nome"]
+            if nome in nomes_existentes:
+                continue
+
+            # Esses dois itens estavam declarados no módulo de extras, mas
+            # as funções correspondentes não existem no gerenciador atual.
+            if nome == "renomear_arquivo" and not hasattr(gerenciador_arquivos, "renomear"):
+                continue
+            if nome == "mostrar_arquivo" and not hasattr(gerenciador_arquivos, "mostrar"):
+                continue
+
+            acao = item["acao"]
+            self.registrar(
+                nome=nome,
+                palavras_chave=item["frases"],
+                funcao=lambda p, fn=acao: RespostaAcao(fala=fn(p)),
+                descricao=item.get("descricao", ""),
+                critico=item.get("critico", False),
+                pergunta_confirmacao=item.get("pergunta", ""),
+                texto_livre=item.get("texto_livre", False),
+            )
+            nomes_existentes.add(nome)
+
+
     # LOCALIZAR COMANDO
 
     def encontrar_comando(
@@ -774,6 +823,82 @@ class GerenciadorComandos:
             )
 
         return self._executar_comando(comando, parametro)
+
+    def listar_ferramentas_ia(self) -> list[dict]:
+        """Devolve schemas de ferramentas autorizadas para tool calling."""
+        return self.registro_ferramentas.schemas_ia()
+
+
+    def catalogo_ferramentas_ia(self) -> list[dict]:
+        """Devolve descrição, categoria, risco e confirmação de cada ferramenta."""
+        return self.registro_ferramentas.catalogo_ia()
+
+
+    def instrucoes_seguranca_ferramentas_ia(self) -> str:
+        """Devolve as regras de segurança que devem acompanhar o catálogo."""
+        return self.registro_ferramentas.instrucoes_seguranca_ia()
+
+
+    def solicitar_confirmacao_ferramenta(self, nome: str, parametro: str = "") -> dict:
+        """Coloca uma chamada da IA na fila de confirmação por voz.
+
+        A execução continua passando por _tratar_confirmacao; a IA não pode
+        marcar a própria ação como confirmada.
+        """
+        comando = next((c for c in self.comandos if c.nome == nome), None)
+        if comando is None:
+            return {
+                "status": "nao_encontrada",
+                "mensagem": "Ferramenta não encontrada.",
+                "executado": False,
+            }
+
+        if self.confirmacao.aguardando():
+            return {"status": "erro", "mensagem": "Já existe uma ação pendente.", "executado": False}
+        self.confirmacao.pedir(comando, parametro, origem_ia=True)
+        pergunta = f"Confirma a ação {nome.replace('_', ' ')} com parâmetro {parametro or '(vazio)'}? Diga sim ou não."
+        return {
+            "status": "confirmacao_necessaria",
+            "ferramenta": nome,
+            "mensagem": pergunta,
+            "resposta": pergunta,
+            "executado": False,
+            "aguardando_confirmacao": True,
+        }
+
+
+    def executar_ferramenta(
+        self,
+        nome: str,
+        parametro: str = "",
+        *,
+        confirmado: bool = False
+    ) -> ResultadoComando:
+        """Executa uma ferramenta pelo identificador, sem passar pelo parser de voz.
+
+        Este caminho é usado pelo executor unificado. A autorização e a
+        confirmação da origem IA são verificadas antes de chegar aqui.
+        O comando legado continua sendo a implementação real da operação.
+        """
+        comando = next((c for c in self.comandos if c.nome == nome), None)
+
+        if comando is None:
+            return ResultadoComando(
+                status=StatusComando.NAO_ENCONTRADO,
+                comando=nome,
+                mensagem=f"Ferramenta não encontrada: {nome}",
+            )
+
+        if comando.critico and not confirmado:
+            return ResultadoComando(
+                status=StatusComando.AGUARDANDO_CONFIRMACAO,
+                comando=nome,
+                mensagem="A ferramenta exige confirmação.",
+                resposta_falada="Preciso da sua confirmação antes de executar essa ação.",
+            )
+
+        return self._executar_comando(comando, parametro)
+
 
     def _tratar_confirmacao(self, texto: str) -> ResultadoComando:
 
