@@ -16,7 +16,7 @@ Responsabilidade:
     texto vindo de fora: quem pede só escolhe entre as opções abaixo.
 
 Este módulo trabalha numa planilha já aberta (worksheet do openpyxl).
-Quem abre e salva o arquivo é o arquivos_voz.
+Quem abre e salva o arquivo é arquivos.gerenciador_arquivos.
 """
 
 

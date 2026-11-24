@@ -1,13 +1,13 @@
 import re
 import webbrowser
+from urllib.parse import urlparse
 
 from configs import configuracoes_voz
-from pesquisa. import pesquisa_web
-from .arquivos_voz import (
+from pesquisa import pesquisa_web
+from arquivos.gerenciador_arquivos import (
     ConteudoPesquisado,
     Fonte,
     TrechoPesquisado,
-    _dominio,
     _padrao_local,
     gerenciador_arquivos,
 )
@@ -83,6 +83,11 @@ _PEDIDO_ARQUIVO = re.compile(
 )
 
 _SOBRE = re.compile(r"^(?:sobre|a respeito de|acerca de)(?:\s+|$)", re.IGNORECASE)
+
+
+def _dominio(link):
+    """Extrai o domínio legível de um endereço de resultado."""
+    return urlparse(link).netloc.removeprefix("www.") or "site desconhecido"
 
 
 # FUNÇÕES AUXILIARES

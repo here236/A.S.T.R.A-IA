@@ -1,7 +1,7 @@
 import webbrowser
 from urllib.parse import quote_plus
 
-from voz.arquivos_voz import gerenciador_arquivos as arq
+from arquivos.gerenciador_arquivos import gerenciador_arquivos as arq
 from voz.pesquisa_voz import gerenciador_pesquisa as pes
 
 """

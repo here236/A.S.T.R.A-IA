@@ -153,7 +153,7 @@ MANTER_AUDIOS = False
 
 
 # MANIPULAÇÃO DE ARQUIVOS
-# Lógica em voz/arquivos_voz.py
+# Lógica em arquivos/gerenciador_arquivos.py
 
 # LOCAIS onde a A.S.T.R.A. pode criar, ler e excluir arquivos.
 # O nome (à esquerda) é o que o usuário fala: "crie uma pasta fotos
@@ -299,7 +299,7 @@ LOCAL_PADRAO = "astra"
 
 
 # PESQUISA NA WEB
-# Lógica em voz/pesquisa_web.py (rede) e voz/pesquisa_voz.py (voz)
+# Lógica em pesquisa/pesquisa_web.py (rede) e voz/pesquisa_voz.py (voz)
 
 # Como pesquisar:
 #   "leve"       só pedidos HTTP diretos. Não abre navegador. Para PCs fracos.

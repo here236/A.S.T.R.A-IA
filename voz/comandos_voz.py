@@ -11,7 +11,7 @@ from .utilitarios_voz import normalizar_texto
 
 from .confirmacao_voz import Decisao, GerenciadorConfirmacao
 
-from .arquivos_voz import gerenciador_arquivos
+from arquivos.gerenciador_arquivos import gerenciador_arquivos
 
 """
 Ações específicas da A.S.T.R.A.
