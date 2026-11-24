@@ -280,7 +280,8 @@ class GerenciadorComandos:
                 "abre o navegador",
                 "abre navegador",
                 "inicia o navegador",
-                "iniciar o navegador"
+                "iniciar o navegador",
+                "abrir ou navegador"
             ],
             funcao=self.abrir_navegador,
             descricao="Abrir o navegador."
@@ -327,7 +328,10 @@ class GerenciadorComandos:
                 "novo arquivo word",
                 "criar documento",
                 "crie documento",
-                "novo documento"
+                "novo documento",
+                "cria um documento",
+                "criam um documento",
+                "queria um documento"
             ],
             funcao=self.criar_documento,
             descricao="Criar um documento do Word."
