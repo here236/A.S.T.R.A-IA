@@ -181,3 +181,8 @@ Audios/*
 !Audios/.gitkeep
 
 .vscode
+
+# Modelos de reconhecimento de fala (centenas de MB, cada pessoa baixa
+# na própria máquina com: python -m voz.baixar_modelo)
+modelos/*
+!modelos/.gitkeep

@@ -1,5 +1,5 @@
-from captura_tela.captura_principal import executar_captura
+from voz.voz_principal import iniciar_conversa
 
 if __name__ == "__main__":
 
-    executar_captura()
+    raise SystemExit(iniciar_conversa())
