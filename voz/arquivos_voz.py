@@ -5,7 +5,7 @@ from typing import Optional
 import difflib
 
 from configs import configuracoes_voz
-from .utilitarios_voz import log, normalizar_texto
+from voz.utilitarios_voz import log, normalizar_texto
 
 """
 Manipulação de arquivos da A.S.T.R.A.
@@ -754,7 +754,7 @@ class GerenciadorArquivos:
 
         from openpyxl import load_workbook
 
-        from . import estilo_planilha
+        from ..manipulacao_arquivos import estilo_planilha
 
         caminho = self._planilha_editavel()
 
@@ -786,7 +786,7 @@ class GerenciadorArquivos:
 
         from openpyxl import load_workbook
 
-        from . import estilo_planilha
+        from ..manipulacao_arquivos import estilo_planilha
 
         caminho = self._planilha_editavel()
 
