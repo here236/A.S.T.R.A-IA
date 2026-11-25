@@ -120,8 +120,10 @@ class TestProcessar(Base):
         self.assertIn("Bom dia", self.assistente.processar("Ok Astra, bom dia").fala)
 
     def test_nao_entendeu(self):
-        saida = self.assistente.processar("Ok Astra, quantas luas tem Júpiter")
-        self.assertEqual(saida.fala, RESPOSTA_PADRAO)
+        from voz.intencao_voz import Esclarecimento
+        a = self.novo_assistente(interpretar_intencao=lambda _: Esclarecimento("offline", indisponivel=True))
+        saida = a.processar("Ok Astra, quantas luas tem Júpiter")
+        self.assertIn("Ollama", saida.fala)
         self.assertFalse(saida.aguardar_comando)
 
     def test_encerrar(self):
@@ -202,7 +204,7 @@ class TestConfirmacao(Base):
     def test_confirmacao_vencida_nao_executa(self):
         self.assistente.processar("Ok Astra, feche o navegador")
         with mock.patch.object(config, "TEMPO_LIMITE_CONFIRMACAO", 0):
-            self.assertIsNone(self.assistente.processar("sim"))
+            self.assertIn("prazo de confirmação terminou", self.assistente.processar("sim").fala)
         self.assertEqual(self.taskkill, [])
 
     def test_outro_comando_no_meio_da_confirmacao_nao_executa_nada(self):

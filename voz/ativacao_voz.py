@@ -37,7 +37,7 @@ PALAVRAS_ATIVACAO = [
 LIMITE_SIMILARIDADE = 0.78
 
 # Tempo que a A.S.T.R.A. permanece ativa após ser chamada.
-TEMPO_ATIVA = 10.0
+TEMPO_ATIVA = 30.0
 
 
 

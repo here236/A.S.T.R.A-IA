@@ -40,7 +40,7 @@ DURACAO_CALIBRACAO_RUIDO = 1
 
 # Segundos que a A.S.T.R.A. espera pelo "sim" ou "não" antes de
 # desistir e cancelar a ação sozinha.
-TEMPO_LIMITE_CONFIRMACAO = 15
+TEMPO_LIMITE_CONFIRMACAO = 60
 
 # Quantas vezes repete a pergunta quando não entende a resposta.
 # Depois disso, cancela por segurança.

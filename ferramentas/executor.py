@@ -9,6 +9,18 @@ class ExecutorFerramentas:
         self._gerenciador = gerenciador_comandos
         self._registro = registro
 
+    def coletar_parametro_explicito(self, solicitacao, permitidas):
+        """Evita que o modelo invente um argumento para um pedido explícito vazio."""
+        identificar = getattr(self._gerenciador, "parametro_explicito_faltante", None)
+        if not callable(identificar):
+            return None
+        pendencia = identificar(solicitacao, permitidas)
+        if pendencia is None:
+            return None
+        nome, parametro = pendencia
+        # A chamada apenas registra a pendência; executar() revalida a política.
+        return self.executar(nome, {"parametro": parametro})
+
     def executar(self, nome: str, argumentos=None, *, confirmado: bool = False) -> dict:
         ferramenta = self._registro.obter(nome)
         if ferramenta is None:
@@ -21,6 +33,15 @@ class ExecutorFerramentas:
         valido, erro = validar_argumentos(argumentos)
         if not valido:
             return self._resultado("argumentos_invalidos", erro)
+
+        # Coleta o argumento antes da confirmação: não confirma uma ação vazia.
+        solicitar_parametro = getattr(self._gerenciador, "solicitar_parametro_faltante", None)
+        if callable(solicitar_parametro):
+            pendencia = solicitar_parametro(nome, argumentos.get("parametro", ""), origem_ia=True)
+            if pendencia is not None:
+                return {"status": pendencia.status.value, "ferramenta": nome,
+                        "mensagem": pendencia.resposta_falada, "resposta": pendencia.resposta_falada,
+                        "executado": False}
 
         if ferramenta.requer_confirmacao and not confirmado:
             # Quando disponível, registra a ação no mesmo mecanismo de

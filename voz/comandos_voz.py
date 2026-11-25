@@ -10,8 +10,11 @@ from urllib.parse import quote_plus
 from .utilitarios_voz import normalizar_texto
 
 from .confirmacao_voz import Decisao, GerenciadorConfirmacao
+from .memoria_operacional import MemoriaOperacional
+from .gerenciador_dialogo import GerenciadorDialogo, parametro_faltante, CANCELAMENTOS, CRIACOES
 
-from arquivos.gerenciador_arquivos import gerenciador_arquivos
+from arquivos.gerenciador_arquivos import gerenciador_arquivos, ResultadoArquivo
+from .utilitarios_voz import log
 
 """
 Ações específicas da A.S.T.R.A.
@@ -46,6 +49,7 @@ class StatusComando(Enum):
     NAO_ENCONTRADO = "nao_encontrado"
     ERRO = "erro"
     AGUARDANDO_CONFIRMACAO = "aguardando_confirmacao"
+    AGUARDANDO_PARAMETRO = "aguardando_parametro"
     CANCELADO = "cancelado"
 
 @dataclass
@@ -195,6 +199,8 @@ class GerenciadorComandos:
 
         # RN03: controle das confirmações (voz/confirmacao_voz.py)
         self.confirmacao = GerenciadorConfirmacao()
+        self.dialogo = GerenciadorDialogo()
+        self.memoria_operacional = MemoriaOperacional()
 
         self._registrar_comandos()
         self._registrar_comandos_extras()
@@ -247,7 +253,7 @@ class GerenciadorComandos:
             palavras_chave=expandidas,
             funcao=funcao,
             descricao=descricao,
-            critico=critico,
+            critico=critico or nome in CRIACOES,
             pergunta_confirmacao=pergunta_confirmacao,
             texto_livre=texto_livre
         )
@@ -783,7 +789,10 @@ class GerenciadorComandos:
         if self.confirmacao.aguardando():
 
             return self._tratar_confirmacao(texto)
-        
+
+        if self.dialogo.aguardando():
+            return self._responder_parametro(texto)
+
         if not texto:
 
             return ResultadoComando(
@@ -807,7 +816,18 @@ class GerenciadorComandos:
         else:
             parametro = self._extrair_parametro(texto, expressao)
 
-        # RN03: ação crítica não executa agora, pede confirmação.
+        return self._iniciar_comando(comando, parametro)
+
+    def _iniciar_comando(self, comando, parametro):
+        pendencia = self.solicitar_parametro_faltante(comando.nome, parametro, origem_ia=False)
+        if pendencia:
+            return pendencia
+        # Toda criação exige confirmação explícita, mesmo com nome já informado.
+        if comando.nome in CRIACOES:
+            self.confirmacao.pedir(comando, parametro, exata=True)
+            return ResultadoComando(StatusComando.AGUARDANDO_CONFIRMACAO, comando=comando.nome,
+                                    resposta_falada=f"Confirma a ação {comando.nome.replace('_', ' ')} com nome {parametro}? Diga sim ou não.")
+        # RN03: demais ações críticas mantêm o fluxo original.
         if comando.critico:
 
             self.confirmacao.pedir(comando, parametro)
@@ -823,6 +843,61 @@ class GerenciadorComandos:
             )
 
         return self._executar_comando(comando, parametro)
+
+    def parametro_explicito_faltante(self, solicitacao, permitidas):
+        """Reconhece somente o argumento ausente de uma ação já autorizada."""
+        if len(permitidas) != 1:
+            return None
+        comando, expressao = self.encontrar_comando(solicitacao)
+        if comando is None or comando.nome not in permitidas:
+            return None
+        parametro = (self._extrair_parametro_livre(solicitacao, expressao)
+                     if comando.texto_livre else self._extrair_parametro(solicitacao, expressao))
+        if parametro_faltante(comando.nome, parametro):
+            return comando.nome, parametro
+        return None
+
+    def solicitar_parametro_faltante(self, nome, parametro, *, origem_ia):
+        pergunta = parametro_faltante(nome, parametro)
+        if not pergunta:
+            return None
+        if self.confirmacao.aguardando() or self.dialogo.aguardando():
+            return ResultadoComando(StatusComando.ERRO, comando=nome,
+                                    resposta_falada="Já existe uma tarefa pendente.")
+        self.dialogo.pedir(nome, parametro, origem_ia, pergunta)
+        return ResultadoComando(StatusComando.AGUARDANDO_PARAMETRO, comando=nome,
+                                resposta_falada=pergunta)
+
+    def _responder_parametro(self, texto):
+        pendente = self.dialogo.pendente
+        normalizado = normalizar_texto(texto)
+        if normalizado in CANCELAMENTOS:
+            self.dialogo.cancelar()
+            return ResultadoComando(StatusComando.CANCELADO, comando=pendente.nome,
+                                    resposta_falada="Tudo bem, cancelei a tarefa.")
+        parametro = self.dialogo.completar(pendente, texto) if normalizado else None
+        if (not parametro or normalizado == "sim" or len(parametro) > 4000
+                or parametro_faltante(pendente.nome, parametro)):
+            return ResultadoComando(StatusComando.AGUARDANDO_PARAMETRO, comando=pendente.nome,
+                                    resposta_falada=pendente.pergunta if normalizado else "")
+        self.dialogo.cancelar()
+        if pendente.origem_ia:
+            # Revalida registro, permissões e confirmação; nunca herda um sim.
+            import os
+            if os.getenv("ASTRA_IA_HABILITADA", "1").strip().lower() in {"0", "false", "nao", "não", "off"}:
+                return ResultadoComando(StatusComando.CANCELADO, comando=pendente.nome,
+                                        resposta_falada="A IA está desabilitada. Cancelei a tarefa.")
+            resultado = self.executor_ferramentas.executar(pendente.nome, {"parametro": parametro})
+            status = resultado.get("status")
+            status = {"confirmacao_necessaria": StatusComando.AGUARDANDO_CONFIRMACAO,
+                      "aguardando_parametro": StatusComando.AGUARDANDO_PARAMETRO,
+                      "sucesso": StatusComando.SUCESSO}.get(status, StatusComando.ERRO)
+            return ResultadoComando(status, comando=pendente.nome, dados=resultado.get("dados"),
+                                    resposta_falada=resultado.get("resposta") or resultado.get("mensagem") or "Não consegui continuar a tarefa.")
+        comando = next((c for c in self.comandos if c.nome == pendente.nome), None)
+        if comando is None:
+            return ResultadoComando(StatusComando.ERRO, resposta_falada="Comando não disponível.")
+        return self._iniciar_comando(comando, parametro)
 
     def listar_ferramentas_ia(self) -> list[dict]:
         """Devolve schemas de ferramentas autorizadas para tool calling."""
@@ -935,12 +1010,24 @@ class GerenciadorComandos:
 
             resposta = comando.funcao(parametro)
 
+            fala = resposta.fala
+            dados = resposta.dados
+            if isinstance(fala, ResultadoArquivo):
+                if not fala.sucesso:
+                    return ResultadoComando(StatusComando.ERRO, comando=comando.nome,
+                                            mensagem=str(fala), resposta_falada=str(fala))
+                dados = fala.dados if fala.dados is not None else dados
+                if dados and isinstance(dados, dict) and dados.get("caminho"):
+                    log(f"Resultado de {comando.nome}: {dados['caminho']}")
+                    if comando.nome in CRIACOES or comando.nome in {"pesquisar_documento", "pesquisar_planilha", "pesquisar_apresentacao"}:
+                        fala = f"{fala} Caminho: {dados['caminho']}."
+            self.memoria_operacional.registrar(comando.nome, dados)
             return ResultadoComando(
                 status=StatusComando.SUCESSO,
                 comando=comando.nome,
                 mensagem=f"Comando '{comando.nome}' executado.",
-                dados=resposta.dados,
-                resposta_falada=resposta.fala,
+                dados=dados,
+                resposta_falada=str(fala),
                 encerrar=resposta.encerrar
             )
 
@@ -990,9 +1077,8 @@ class GerenciadorComandos:
 
     def abrir_navegador(self, parametro: str = "") -> RespostaAcao:
 
-        webbrowser.open(
-            "https://www.google.com"
-        )
+        if not webbrowser.open("https://www.google.com"):
+            raise RuntimeError("O navegador não aceitou a solicitação.")
 
         return RespostaAcao(fala="Abrindo o navegador.")
     
@@ -1128,7 +1214,8 @@ class GerenciadorComandos:
 
             site = f"{site}.com"
 
-        webbrowser.open(f"https://www.{site}")
+        if not webbrowser.open(f"https://www.{site}"):
+            raise RuntimeError("O navegador não aceitou a solicitação.")
 
         return RespostaAcao(
             fala=f"Abrindo o site {parametro}.",
@@ -1142,9 +1229,11 @@ class GerenciadorComandos:
 
             return RespostaAcao(fala="O que você quer pesquisar?")
 
-        webbrowser.open(
+        abriu = webbrowser.open(
             f"https://www.google.com/search?q={quote_plus(parametro)}"
         )
+        if abriu is False:
+            raise RuntimeError("O navegador não aceitou a solicitação de pesquisa.")
 
         return RespostaAcao(
             fala=f"Pesquisando {parametro}.",

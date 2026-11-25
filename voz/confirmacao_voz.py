@@ -40,6 +40,7 @@ class AcaoPendente:
     momento: float
     tentativas_restantes: int
     origem_ia: bool = False
+    exata: bool = False
 
 
 @dataclass
@@ -90,7 +91,7 @@ class GerenciadorConfirmacao:
 
         self._pendente: Optional[AcaoPendente] = None
 
-    def pedir(self, comando: Any, parametro: str = "", *, origem_ia=False):
+    def pedir(self, comando: Any, parametro: str = "", *, origem_ia=False, exata=False):
         """
         Guarda a ação crítica e começa a esperar a confirmação.
         """
@@ -100,7 +101,8 @@ class GerenciadorConfirmacao:
             parametro = parametro,
             momento = time.monotonic(),
             tentativas_restantes = configuracoes_voz.TENTATIVAS_CONFIRMACAO,
-            origem_ia = origem_ia
+            origem_ia = origem_ia,
+            exata = exata
         )
 
     def aguardando(self) -> bool:
@@ -120,6 +122,11 @@ class GerenciadorConfirmacao:
 
         return True
 
+    def renovar_prazo(self):
+        """Conta o tempo de confirmação a partir do fim da fala da ASTRA."""
+        if self._pendente is not None:
+            self._pendente.momento = time.monotonic()
+
     def cancelar(self):
         """
         Descarta a ação pendente, se houver.
@@ -135,7 +142,7 @@ class GerenciadorConfirmacao:
 
         pendente = self._pendente
 
-        if pendente.origem_ia:
+        if pendente.origem_ia or pendente.exata:
             frase = normalizar_texto(texto)
             resposta = True if frase == "sim" else False if frase in {"nao", "cancelar"} else None
         else:

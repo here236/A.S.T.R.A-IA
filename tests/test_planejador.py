@@ -1,10 +1,11 @@
 import json
 import unittest
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from ferramentas import RegistroFerramentas
 from ferramentas.modelos import Ferramenta
-from ia.planejador import ErroPlanejamento, PlanejadorASTRA, Plano
+from ia.planejador import ErroPlanejamento, PlanejadorASTRA, Plano, FORMATO_CONVERSA, INSTRUCAO_CONVERSA
 
 
 class ClienteFalso:
@@ -12,7 +13,7 @@ class ClienteFalso:
         self.respostas = list(respostas)
         self.chamadas = []
 
-    def gerar_resposta(self, sistema, usuario):
+    def gerar_resposta(self, sistema, usuario, **kwargs):
         self.chamadas.append((sistema, json.loads(usuario)))
         return self.respostas.pop(0)
 
@@ -75,25 +76,56 @@ class PlanejadorTests(unittest.TestCase):
         self.assertEqual(resultado["status"], "resposta")
         self.assertEqual(resultado["mensagem"], "Não tenho essa capacidade.")
 
-    def test_limite_de_etapas_e_respeitado(self):
-        resposta = '{"acao":"executar","ferramentas":[{"nome":"pesquisar","argumentos":{"parametro":"x"}}]}'
-        cliente = ClienteFalso([resposta, resposta])
-        resultado = PlanejadorASTRA(cliente, self.registro, ExecutorFalso(), max_etapas=1).processar("pesquise x")
-        self.assertEqual(resultado["status"], "limite_de_etapas")
+    def test_pergunta_usa_formato_exclusivo_de_resposta(self):
+        cliente = Mock()
+        cliente.gerar_resposta.return_value = '{"acao":"responder","ferramentas":[],"resposta":"Linux é um núcleo de sistema operacional."}'
+        executor = ExecutorFalso()
+        p = PlanejadorASTRA(cliente, self.registro, executor)
+        resultado = p.processar('o que é Linux?')
+        self.assertEqual(resultado['status'], 'resposta')
+        args, kwargs = cliente.gerar_resposta.call_args
+        self.assertEqual(args[0], INSTRUCAO_CONVERSA)
+        self.assertEqual(kwargs['formato'], FORMATO_CONVERSA)
+        self.assertEqual(kwargs['formato']['properties']['acao']['enum'], ['responder'])
+        self.assertEqual(kwargs['formato']['properties']['ferramentas']['maxItems'], 0)
+        self.assertEqual(json.loads(args[1])['catalogo_autorizado'], [])
+        self.assertEqual(executor.chamadas, [])
 
-    def test_multiplas_ferramentas_e_contexto(self):
+    def test_modo_conversa_bloqueia_ferramenta_inventada(self):
+        cliente = Mock()
+        cliente.gerar_resposta.return_value = '{"acao":"executar","ferramentas":[{"nome":"inventada","argumentos":{"parametro":""}}],"resposta":""}'
+        executor = ExecutorFalso()
+        resultado = PlanejadorASTRA(cliente, self.registro, executor).processar('o que é Linux?')
+        self.assertEqual(resultado['status'], 'plano_invalido')
+        self.assertEqual(executor.chamadas, [])
+
+    def test_limite_de_etapas_e_respeitado(self):
+        for nome in ("abrir_navegador", "ver_hora"):
+            self.registro.registrar(Ferramenta(nome=nome, descricao=nome, categoria="teste"))
+        executor = ExecutorFalso()
+        resultado = PlanejadorASTRA(ClienteFalso([]), self.registro, executor, max_etapas=1).processar("abra o navegador e diga as horas")
+        self.assertEqual(resultado["status"], "limite_de_etapas")
+        self.assertEqual(executor.chamadas, [])
+
+    def test_mesma_ferramenta_com_parametros_distintos_bloqueada(self):
+        cliente = ClienteFalso([json.dumps({"acao":"executar","ferramentas":[{"nome":"pesquisar","argumentos":{"parametro":x}} for x in ("a","b")]})])
+        executor = ExecutorFalso()
+        planejador = PlanejadorASTRA(cliente, self.registro, executor)
+        self.assertEqual(planejador.processar("pesquise a e b")["status"], "ciclo_detectado")
+        self.assertEqual(executor.chamadas, [])
+
+    def test_conversa_mantem_contexto(self):
         cliente = ClienteFalso([
-            json.dumps({"acao":"executar","ferramentas":[{"nome":"pesquisar","argumentos":{"parametro":x}} for x in ("a","b")]}),
-            '{"acao":"responder","ferramentas":[],"resposta":"Resultado combinado."}',
+            '{"acao":"responder","ferramentas":[],"resposta":"Python é uma linguagem."}',
+            '{"indices":[1]}',
             '{"acao":"responder","ferramentas":[],"resposta":"Continuação."}'
         ])
         executor = ExecutorFalso()
         planejador = PlanejadorASTRA(cliente, self.registro, executor)
-        self.assertEqual(planejador.processar("compare a e b")["status"], "resposta")
-        self.assertEqual(len(executor.chamadas), 2)
-        self.assertEqual(len(cliente.chamadas[1][1]["resultados_anteriores"]), 2)
+        planejador.processar("o que é Python")
         planejador.processar("continue")
-        self.assertEqual(cliente.chamadas[2][1]["historico_conversa"][0]["usuario"], "compare a e b")
+        self.assertEqual(cliente.chamadas[2][1]["historico_conversa"][0]["usuario"], "o que é Python")
+        self.assertEqual(executor.chamadas, [])
         planejador.limpar_historico()
         self.assertEqual(planejador.historico, [])
 

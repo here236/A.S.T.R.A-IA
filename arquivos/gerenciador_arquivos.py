@@ -328,6 +328,26 @@ def _falar_numero(numero):
     return f"{numero:.2f}".replace(".", ",")
 
 
+class ResultadoArquivo(str):
+    """Texto compatível com chamadas legadas, com status e evidência separados."""
+    def __new__(cls, fala, *, sucesso=True, dados=None):
+        obj = super().__new__(cls, fala)
+        obj.sucesso = sucesso
+        obj.dados = dados
+        return obj
+
+
+def _resultado_caminho(fala, caminho, *, pasta=False, removido=False):
+    if removido:
+        if caminho.exists() or caminho.is_symlink():
+            raise ErroArquivo("Não consegui verificar a remoção do item.")
+    elif not (caminho.is_dir() if pasta else caminho.is_file()):
+        raise ErroArquivo("Não consegui verificar o arquivo ou pasta no destino.")
+    return ResultadoArquivo(fala, dados={"caminho": str(caminho.resolve()),
+                                         "verificacao": "ausente_no_origem" if removido else "existe",
+                                         "tipo": "pasta" if pasta else "arquivo"})
+
+
 def _seguro(funcao):
     """
     Transforma os erros comuns em frases faladas, em vez de deixar
@@ -341,13 +361,11 @@ def _seguro(funcao):
             return funcao(*args, **kwargs)
 
         except ErroArquivo as erro:
-            return str(erro)
+            return ResultadoArquivo(str(erro), sucesso=False)
 
         except PermissionError:
-            return (
-                "Não consegui mexer nesse arquivo. Ele pode estar "
-                "aberto em outro programa. Feche e tente de novo."
-            )
+            return ResultadoArquivo("Não consegui mexer nesse arquivo. Ele pode estar "
+                "aberto em outro programa. Feche e tente de novo.", sucesso=False)
 
         except ImportError as erro:
             log(
@@ -355,7 +373,7 @@ def _seguro(funcao):
                 "pip install python-docx openpyxl python-pptx send2trash",
                 "ERRO"
             )
-            return "Falta instalar uma biblioteca do Python. Veja o terminal."
+            return ResultadoArquivo("Falta instalar uma biblioteca do Python. Veja o terminal.", sucesso=False)
 
     return interna
 
@@ -577,7 +595,7 @@ class GerenciadorArquivos:
 
         caminho.mkdir()
 
-        return f"{_descrever(caminho).capitalize()} criada{_onde(chave)}."
+        return _resultado_caminho(f"{_descrever(caminho).capitalize()} criada{_onde(chave)}.", caminho, pasta=True)
 
     @_seguro
     def criar_documento(self, parametro):
@@ -588,12 +606,11 @@ class GerenciadorArquivos:
 
         Document().save(caminho)
 
-        self.atual = caminho
-
-        return (
+        resultado = _resultado_caminho(
             f"{_descrever(caminho).capitalize()} criado{_onde(chave)}. "
-            "Diga escreva, e o texto, para adicionar conteúdo."
-        )
+            "Diga escreva, e o texto, para adicionar conteúdo.", caminho)
+        self.atual = caminho
+        return resultado
 
     @_seguro
     def criar_planilha(self, parametro):
@@ -621,8 +638,6 @@ class GerenciadorArquivos:
 
         planilha.save(caminho)
 
-        self.atual = caminho
-
         frase = f"{_descrever(caminho).capitalize()} criada{_onde(chave)}"
 
         if colunas:
@@ -630,7 +645,9 @@ class GerenciadorArquivos:
 
             frase += f" com {len(colunas)} {plural}: " + ", ".join(colunas)
 
-        return frase + ". Diga adicione a linha, e os valores."
+        resultado = _resultado_caminho(frase + ". Diga adicione a linha, e os valores.", caminho)
+        self.atual = caminho
+        return resultado
 
     @_seguro
     def criar_texto(self, parametro):
@@ -639,12 +656,11 @@ class GerenciadorArquivos:
 
         caminho.write_text("", encoding="utf-8")
 
-        self.atual = caminho
-
-        return (
+        resultado = _resultado_caminho(
             f"{_descrever(caminho).capitalize()} criado{_onde(chave)}. "
-            "Diga escreva, e o texto, para adicionar conteúdo."
-        )
+            "Diga escreva, e o texto, para adicionar conteúdo.", caminho)
+        self.atual = caminho
+        return resultado
 
     @_seguro
     def criar_apresentacao(self, parametro):
@@ -655,12 +671,11 @@ class GerenciadorArquivos:
 
         Presentation().save(caminho)
 
-        self.atual = caminho
-
-        return (
+        resultado = _resultado_caminho(
             f"{_descrever(caminho).capitalize()} criada{_onde(chave)}. "
-            "Diga adicione um slide, e o título."
-        )
+            "Diga adicione um slide, e o título.", caminho)
+        self.atual = caminho
+        return resultado
 
 
     # ESCREVER
@@ -677,7 +692,7 @@ class GerenciadorArquivos:
         texto = texto.strip()
 
         if not texto:
-            return "O que devo escrever?"
+            raise ErroArquivo("O que devo escrever?")
 
         if caminho.suffix == ".docx":
 
@@ -689,14 +704,14 @@ class GerenciadorArquivos:
 
             documento.save(caminho)
 
-            return "Escrito."
+            return _resultado_caminho("Escrito.", caminho)
 
         if caminho.suffix == ".txt":
 
             with open(caminho, "a", encoding="utf-8") as arquivo:
                 arquivo.write(texto + "\n")
 
-            return "Escrito."
+            return _resultado_caminho("Escrito.", caminho)
 
         if caminho.suffix == ".pptx":
 
@@ -732,7 +747,7 @@ class GerenciadorArquivos:
 
             apresentacao.save(caminho)
 
-            return f"Escrito no slide {len(slides)}."
+            return _resultado_caminho(f"Escrito no slide {len(slides)}.", caminho)
 
         if caminho.suffix == ".xlsx":
             raise ErroArquivo(
@@ -766,7 +781,7 @@ class GerenciadorArquivos:
         ]
 
         if not valores:
-            return "Diga os valores. Por exemplo: Joel, 30, São Paulo."
+            raise ErroArquivo("Diga os valores. Por exemplo: Joel, 30, São Paulo.")
 
         planilha = load_workbook(caminho)
 
@@ -776,7 +791,7 @@ class GerenciadorArquivos:
 
         planilha.save(caminho)
 
-        return f"Linha {linha} adicionada com {len(valores)} valores."
+        return _resultado_caminho(f"Linha {linha} adicionada com {len(valores)} valores.", caminho)
 
     @_seguro
     def embelezar_planilha(self, parametro=""):
@@ -809,7 +824,7 @@ class GerenciadorArquivos:
 
         planilha.save(caminho)
 
-        return f"Planilha formatada no tema {tema}."
+        return _resultado_caminho(f"Planilha formatada no tema {tema}.", caminho)
 
     @_seguro
     def somar_coluna(self, parametro):
@@ -834,7 +849,7 @@ class GerenciadorArquivos:
 
         planilha.save(caminho)
 
-        return f"Total de {titulo}: {_falar_numero(soma)}."
+        return _resultado_caminho(f"Total de {titulo}: {_falar_numero(soma)}.", caminho)
 
     @_seguro
     def adicionar_slide(self, parametro):
@@ -846,7 +861,7 @@ class GerenciadorArquivos:
         titulo = _texto_apos_marcador(parametro, MARCADORES_DE_TITULO)
 
         if not titulo:
-            return "Qual o título do slide?"
+            raise ErroArquivo("Qual o título do slide?")
 
         apresentacao = Presentation(caminho)
 
@@ -856,10 +871,9 @@ class GerenciadorArquivos:
 
         apresentacao.save(caminho)
 
-        return (
+        return _resultado_caminho(
             f"Slide {len(apresentacao.slides)} criado. "
-            "Diga escreva, e o texto, para adicionar tópicos."
-        )
+            "Diga escreva, e o texto, para adicionar tópicos.", caminho)
 
     @_seguro
     def escrever_celula(self, parametro):
@@ -877,7 +891,7 @@ class GerenciadorArquivos:
         if len(partes) < 2 or not re.fullmatch(
             r"[A-Za-z]{1,3}[0-9]{1,7}", partes[0]
         ):
-            return "Diga a célula e o valor. Por exemplo: b2 cem."
+            raise ErroArquivo("Diga a célula e o valor. Por exemplo: b2 cem.")
 
         celula = partes[0].upper()
 
@@ -887,7 +901,7 @@ class GerenciadorArquivos:
 
         planilha.save(caminho)
 
-        return f"Escrito na célula {celula}."
+        return _resultado_caminho(f"Escrito na célula {celula}.", caminho)
 
 
     # LER
@@ -1051,8 +1065,9 @@ class GerenciadorArquivos:
                 partes.extend(f"{fonte.titulo} — {fonte.link}" for fonte in fontes)
             caminho.write_text("\n\n".join(partes), encoding="utf-8")
 
+        resultado = _resultado_caminho(f"Criei {descricao} {caminho.stem.replace('_', ' ')}{_onde(chave)} com o conteúdo da pesquisa.", caminho)
         self.atual = caminho
-        return f"Criei {descricao} {caminho.stem.replace('_', ' ')}{_onde(chave)} com o conteúdo da pesquisa."
+        return resultado
 
     # USAR / LISTAR / EXCLUIR
 
@@ -1111,12 +1126,14 @@ class GerenciadorArquivos:
 
         descricao = _descrever(caminho)
 
+        pasta = caminho.is_dir()
         send2trash(str(caminho))
+        resultado = _resultado_caminho(f"{descricao.capitalize()}{_onde(chave)} foi para a lixeira.", caminho, pasta=pasta, removido=True)
 
         if self.atual == caminho:
             self.atual = None
 
-        return f"{descricao.capitalize()}{_onde(chave)} foi para a lixeira."
+        return resultado
 
 
 # INSTÂNCIA PRINCIPAL

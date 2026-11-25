@@ -75,7 +75,7 @@ class ProcessadorConversa:
         if not texto:
             return RESPOSTA_VAZIA
 
-        if texto == "limpar contexto":
+        if texto in {"limpar contexto", "limpar conversa", "limpar memoria conversacional"}:
             if self._planejador is not None:
                 self._planejador.limpar_historico()
             return "Contexto da conversa limpo."
@@ -96,6 +96,17 @@ class ProcessadorConversa:
             return resposta
 
         return RESPOSTA_PADRAO
+
+    def responder_continuacao(self, texto):
+        """Tentativa de conversa sem ferramentas após intenção inconclusiva."""
+        if not self.ia_habilitada or self._planejador is None:
+            return None
+        try:
+            responder = getattr(self._planejador, "responder_continuacao", None)
+            return responder(texto) if callable(responder) else None
+        except Exception as erro:
+            log(f"Não consegui recuperar a conversa ({type(erro).__name__}).", "AVISO")
+            return None
 
     def _responder_por_regras(self, texto):
         """
@@ -160,6 +171,9 @@ class ProcessadorConversa:
         if status == "resposta":
             return mensagem or RESPOSTA_PADRAO
 
+        if status == "aguardando_parametro":
+            return mensagem or "Preciso de mais informações para continuar."
+
         if status == "aguardando_confirmacao":
             return mensagem or "Preciso da sua confirmação antes de continuar."
 
@@ -173,6 +187,19 @@ class ProcessadorConversa:
                 return " ".join(falas)
             return mensagem or "Concluí as etapas autorizadas."
 
+        if status == "acao_nao_executada":
+            return mensagem or "Não executei nenhuma ação."
+
+        if status == "erro_na_etapa":
+            return mensagem or "Não consegui executar a ferramenta."
+
+        if status == "ferramenta_bloqueada":
+            log(f"{mensagem}", "AVISO")
+            return mensagem or "Bloqueei uma ação que não corresponde ao seu pedido."
+
+        if status == "ciclo_detectado":
+            return mensagem or "Interrompi a tarefa para evitar repetir ações."
+
         if status == "limite_de_etapas":
             return mensagem or "A tarefa ficou parcialmente concluída."
 
@@ -180,8 +207,14 @@ class ProcessadorConversa:
         # também precisam aparecer no console (antes eram silenciosas).
         if status == "ia_indisponivel":
             log(f"O Ollama não conseguiu responder: {mensagem or 'erro não informado'}", "ERRO")
-        elif status in {"plano_invalido", "erro_na_etapa", "ciclo_detectado"}:
+            if any(r.get("status") == "sucesso" for r in resultado.get("resultados", [])):
+                return "Executei parte do pedido, mas perdi a comunicação com a IA local."
+            return "Não consegui consultar a IA local. Verifique se o Ollama está disponível."
+        elif status == "plano_invalido":
             log(f"A IA não concluiu a solicitação ({status}): {mensagem or 'sem detalhes'}", "AVISO")
+            if any(r.get("status") == "sucesso" for r in resultado.get("resultados", [])):
+                return "Executei parte do pedido, mas não consegui concluir a resposta."
+            return "Não consegui gerar uma resposta válida. Pode reformular o pedido?"
         else:
             log(f"A IA retornou um status não tratado ({status!r}). {mensagem}", "AVISO")
 
