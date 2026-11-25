@@ -99,28 +99,18 @@ BEAM_SIZE_STT = 1
 # cima de ruído ou silêncio.
 LIMIAR_SEM_FALA = 0.6
 
-# SÍNTESE DE VOZ (texto -> voz, 100% offline, com o Piper)
-
-# As vozes ficam em "modelos/voz/<nome>/", fora do Git.
+# SÍNTESE DE VOZ (Kokoro-82M ONNX, CPU, offline após download)
 PASTA_VOZES = os.path.join(PASTA_MODELOS, "voz")
-
-# Vozes disponíveis. Para baixar a voz escolhida (uma vez, com internet):
-#     python -m voz.baixar_voz
-# "revisao" fixa a versão exata da voz, para ela não mudar sem você saber.
-VOZES_PIPER = {
-    "razo": {
-        "repositorio": "Lucasllfs/Razo-piper-voice",
-        "revisao": "0f95a8d49045ef58a2dc6745b4f5e15db908e4aa",
-        "modelo": "pt-BR-razo-medium.onnx",
-        "config": "config.json",
+VOZES_KOKORO = {
+    "pf_dora": {
+        "repositorio": "thewh1teagle/kokoro-onnx",
+        "revisao": "model-files-v1.1",
+        "modelo": "kokoro-v1.0.onnx",
+        "vozes": "voices-v1.0.bin",
+        "idioma": "pt-br",
     },
 }
-
-# Voz usada pela assistente (uma das chaves de VOZES_PIPER).
-VOZ_TTS = "razo"
-
-# 1.0 = velocidade normal. 0.8 = mais devagar, 1.3 = mais rápido.
-# O Piper aceita de 0.5 a 2.0.
+VOZ_TTS = "pf_dora"
 VELOCIDADE_FALA = 1.0
 
 # De 0.0 (mudo) a 1.0 (máximo).

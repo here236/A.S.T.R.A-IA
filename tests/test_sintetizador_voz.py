@@ -11,49 +11,31 @@ from unittest import mock
 from configs import configuracoes_voz as config
 from voz import sintetizador_voz as st
 
-TAXA = 22050
+TAXA = 24000
 
 
-class TrechoFalso:
-    """Imita o AudioChunk do Piper."""
-
-    def __init__(self, bytes_):
-        self.sample_rate = TAXA
-        self.audio_int16_bytes = bytes_
-
-
-class VozPiperFalsa:
-    """Imita o PiperVoice: um trecho de áudio por frase, como o Piper real."""
-
+class VozKokoroFalsa:
+    sample_rate = TAXA
     def __init__(self, tamanho_trecho=4000, trechos_por_frase=1, falha_na_frase=None):
-        self.config = SimpleNamespace(length_scale=1.0, sample_rate=TAXA)
         self.tamanho, self.trechos = tamanho_trecho, trechos_por_frase
         self.falha_na_frase = falha_na_frase
-        self.sintetizadas = []   # (texto, configuracao)
+        self.sintetizadas = []
 
-    def synthesize(self, texto, configuracao):
-        self.sintetizadas.append((texto, configuracao))
+    def sintetizar(self, texto, velocidade, volume):
+        self.sintetizadas.append((texto, SimpleNamespace(speed=velocidade, volume=volume)))
         if texto == self.falha_na_frase:
             raise RuntimeError("falha na síntese")
         for _ in range(self.trechos):
-            yield TrechoFalso(b"\x01\x00" * (self.tamanho // 2))
+            yield TAXA, b"\x01\x00" * (self.tamanho // 2)
 
 
-class PiperFalso:
-    """Imita a classe PiperVoice (só o load)."""
-
+class KokoroFalso:
     carregadas = []
     voz_a_devolver = None
 
-    @staticmethod
-    def load(modelo, config_path=None):
-        PiperFalso.carregadas.append((modelo, config_path))
-        return PiperFalso.voz_a_devolver
-
-
-class ConfigSinteseFalsa:
-    def __init__(self, **kwargs):
-        self.__dict__.update(kwargs)
+    def __new__(cls, modelo, arquivo_vozes, nome, idioma):
+        cls.carregadas.append((modelo, arquivo_vozes))
+        return cls.voz_a_devolver
 
 
 class SaidaFalsa:
@@ -90,9 +72,9 @@ class Base(unittest.TestCase):
         self.pasta = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.pasta, True)
 
-        self.voz = VozPiperFalsa()
-        PiperFalso.carregadas = []
-        PiperFalso.voz_a_devolver = self.voz
+        self.voz = VozKokoroFalsa()
+        KokoroFalso.carregadas = []
+        KokoroFalso.voz_a_devolver = self.voz
         self.saidas = []
 
         def criar_saida(taxa):
@@ -102,12 +84,12 @@ class Base(unittest.TestCase):
 
         for p in [
             mock.patch.object(config, "PASTA_VOZES", self.pasta),
-            mock.patch.object(config, "VOZ_TTS", "razo"),
+            mock.patch.object(config, "VOZ_TTS", "pf_dora"),
             mock.patch.object(config, "VELOCIDADE_FALA", 1.0),
             mock.patch.object(config, "VOLUME_FALA", 1.0),
             mock.patch.object(config, "PAUSA_ENTRE_FRASES", 0.15),
             mock.patch.object(config, "LIMITE_CARACTERES_FALA", None),
-            mock.patch.object(st, "_importar_piper", lambda: (PiperFalso, ConfigSinteseFalsa)),
+            mock.patch.object(st, "_VozKokoro", KokoroFalso),
             mock.patch.object(st, "_criar_saida", criar_saida),
             mock.patch.object(st, "log", lambda *a, **k: None),
         ]:
@@ -119,10 +101,10 @@ class Base(unittest.TestCase):
 
     def baixar_voz_falsa(self):
         """Cria os arquivos que o baixar_voz criaria."""
-        info = config.VOZES_PIPER["razo"]
-        pasta = os.path.join(self.pasta, "razo")
+        info = config.VOZES_KOKORO["pf_dora"]
+        pasta = os.path.join(self.pasta, "pf_dora")
         os.makedirs(pasta)
-        for nome in (info["modelo"], info["config"]):
+        for nome in (info["modelo"], info["vozes"]):
             with open(os.path.join(pasta, nome), "wb") as arquivo:
                 arquivo.write(b"0")
         return pasta
@@ -161,7 +143,7 @@ class TestVelocidade(Base):
         self.assertEqual(f(1.0), 1.0)
         self.assertEqual(f(None), 1.0)
         self.assertEqual(f(1.3), 1.3)
-        self.assertEqual(f(0.01), 0.5)    # nunca abaixo do mínimo do Piper
+        self.assertEqual(f(0.01), 0.5)    # nunca abaixo do mínimo do Kokoro
         self.assertEqual(f(50), 2.0)      # nem acima do máximo
         self.assertEqual(f("abc"), 1.0)   # inválida volta ao normal
 
@@ -174,13 +156,13 @@ class TestVozes(Base):
 
     def test_carrega_com_config_explicita_e_so_uma_vez(self):
         pasta = self.baixar_voz_falsa()
-        info = config.VOZES_PIPER["razo"]
+        info = config.VOZES_KOKORO["pf_dora"]
         a = st.carregar_voz()
-        b = st.carregar_voz("razo")
+        b = st.carregar_voz("pf_dora")
         self.assertIs(a, b)
-        self.assertEqual(len(PiperFalso.carregadas), 1)
-        self.assertEqual(PiperFalso.carregadas[0],
-                         (os.path.join(pasta, info["modelo"]), os.path.join(pasta, info["config"])))
+        self.assertEqual(len(KokoroFalso.carregadas), 1)
+        self.assertEqual(KokoroFalso.carregadas[0],
+                         (os.path.join(pasta, info["modelo"]), os.path.join(pasta, info["vozes"])))
 
     def test_voz_nao_baixada_orienta_o_que_fazer(self):
         with self.assertRaises(st.VozNaoEncontradaError) as ctx:
@@ -189,26 +171,27 @@ class TestVozes(Base):
 
     def test_so_um_dos_arquivos_conta_como_nao_baixada(self):
         pasta = self.baixar_voz_falsa()
-        os.remove(os.path.join(pasta, config.VOZES_PIPER["razo"]["config"]))
+        os.remove(os.path.join(pasta, config.VOZES_KOKORO["pf_dora"]["vozes"]))
         with self.assertRaises(st.VozNaoEncontradaError):
             st.carregar_voz()
 
     def test_voz_desconhecida_lista_as_disponiveis(self):
         with self.assertRaises(st.VozNaoEncontradaError) as ctx:
             st.carregar_voz("zeca")
-        self.assertIn("razo", str(ctx.exception))
+        self.assertIn("pf_dora", str(ctx.exception))
 
     def test_listar_vozes(self):
-        self.assertEqual([(v["nome"], v["baixada"]) for v in st.listar_vozes()], [("razo", False)])
+        self.assertEqual([(v["nome"], v["baixada"]) for v in st.listar_vozes()], [("pf_dora", False)])
         self.baixar_voz_falsa()
-        self.assertEqual([(v["nome"], v["baixada"]) for v in st.listar_vozes()], [("razo", True)])
+        self.assertEqual([(v["nome"], v["baixada"]) for v in st.listar_vozes()], [("pf_dora", True)])
 
-    def test_registro_da_razo_aponta_para_os_arquivos_reais_do_repositorio(self):
-        info = config.VOZES_PIPER["razo"]
-        self.assertEqual(info["repositorio"], "Lucasllfs/Razo-piper-voice")
-        self.assertEqual(info["modelo"], "pt-BR-razo-medium.onnx")
-        self.assertEqual(info["config"], "config.json")
-        self.assertEqual(len(info["revisao"]), 40)   # commit fixo, não "main"
+    def test_registro_da_pf_dora_aponta_para_os_arquivos_reais_do_repositorio(self):
+        info = config.VOZES_KOKORO["pf_dora"]
+        self.assertEqual(info["repositorio"], "thewh1teagle/kokoro-onnx")
+        self.assertEqual(info["modelo"], "kokoro-v1.0.onnx")
+        self.assertEqual(info["vozes"], "voices-v1.0.bin")
+        self.assertEqual(info["idioma"], "pt-br")
+
 
 
 class TestFalar(Base):
@@ -249,15 +232,13 @@ class TestFalar(Base):
         self.assertFalse(st.falar(None))
         self.assertFalse(st.falar("..."))
         self.assertEqual(self.saidas, [])
-        self.assertEqual(PiperFalso.carregadas, [])
+        self.assertEqual(KokoroFalso.carregadas, [])
 
-    def test_velocidade_vira_length_scale_sobre_o_valor_da_voz(self):
-        self.voz.config.length_scale = 1.2
+    def test_velocidade_e_passada_ao_motor(self):
         st.falar("Oi", velocidade=2.0)
         st.falar("Oi", velocidade=0.5)
         st.falar("Oi")
-        escalas = [round(c.length_scale, 3) for _, c in self.voz.sintetizadas]
-        self.assertEqual(escalas, [0.6, 2.4, 1.2])
+        self.assertEqual([c.speed for _, c in self.voz.sintetizadas], [2.0, 0.5, 1.0])
 
     def test_volume_vai_para_a_sintese_e_e_limitado(self):
         with mock.patch.object(config, "VOLUME_FALA", 0.5):
@@ -269,10 +250,10 @@ class TestFalar(Base):
     def test_voz_carregada_uma_vez_entre_falas(self):
         for _ in range(5):
             st.falar("Teste")
-        self.assertEqual(len(PiperFalso.carregadas), 1)
+        self.assertEqual(len(KokoroFalso.carregadas), 1)
 
     def test_voz_nao_baixada_a_excecao_chega_a_quem_chamou(self):
-        shutil.rmtree(os.path.join(self.pasta, "razo"))
+        shutil.rmtree(os.path.join(self.pasta, "pf_dora"))
         with self.assertRaises(st.VozNaoEncontradaError):
             st.falar("Oi")
         self.assertEqual(self.saidas, [])
@@ -287,11 +268,10 @@ class TestFalar(Base):
         self.assertFalse(st.falar("Unica."))
         self.assertEqual(self.saidas, [])
 
-    def test_pacote_nao_instalado_nao_derruba(self):
-        def sem_pacote():
-            raise RuntimeError("O pacote piper-tts não está instalado.")
-        with mock.patch.object(st, "_importar_piper", sem_pacote):
-            self.assertFalse(st.falar("Oi"))
+    def test_pacote_nao_instalado_orienta_usuario(self):
+        with mock.patch.object(st, "_VozKokoro", side_effect=RuntimeError("Kokoro ausente")):
+            with self.assertRaises(st.VozNaoEncontradaError):
+                st.falar("Oi")
 
     def test_falha_ao_abrir_o_alto_falante_nao_derruba(self):
         def sem_som(taxa):
@@ -384,7 +364,7 @@ class TestThreads(Base):
         t = threading.Thread(target=lambda: resultado.append(st.falar("Em outra thread")))
         t.start(); t.join()
         self.assertEqual(resultado, [True])
-        self.assertEqual(len(PiperFalso.carregadas), 1)
+        self.assertEqual(len(KokoroFalso.carregadas), 1)
 
 
 class TestReamostrar(unittest.TestCase):
@@ -453,7 +433,7 @@ class TestSaidaPyAudio(unittest.TestCase):
         self.PyAudioFalso.aceita = {48000}
         s = st._Saida(TAXA)
         self.assertEqual(self.aberturas, [TAXA, 48000])
-        convertido = s.converter(b"\x01\x00" * 22050)
+        convertido = s.converter(b"\x01\x00" * TAXA)
         self.assertEqual(len(convertido) // 2, 48000)
 
     def test_pacote_ausente_da_mensagem_clara(self):
@@ -465,11 +445,11 @@ class TestSaidaPyAudio(unittest.TestCase):
 
 @unittest.skipUnless(
     os.path.isfile(os.path.join(
-        config.PASTA_VOZES, config.VOZ_TTS, config.VOZES_PIPER[config.VOZ_TTS]["modelo"])),
+        config.PASTA_VOZES, config.VOZ_TTS, config.VOZES_KOKORO[config.VOZ_TTS]["modelo"])),
     "voz não baixada (rode: python -m voz.baixar_voz)")
 class TestVozReal(unittest.TestCase):
     """
-    Usa a voz DE VERDADE (Piper), sem tocar som. Só roda depois de baixar
+    Usa a voz DE VERDADE (Kokoro), sem tocar som. Só roda depois de baixar
     a voz; é o teste que confirma que ela funciona neste computador.
     """
 

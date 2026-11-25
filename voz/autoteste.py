@@ -11,7 +11,7 @@ from .utilitarios_voz import log
 '''
     Autoteste do reconhecimento de voz, SEM microfone
 
-    A voz da assistente (Razo) fala algumas frases, o Whisper as transcreve e
+    A voz da assistente (Dora) fala algumas frases, o Whisper as transcreve e
     o texto passa pela ativação e pelos comandos reais. Mostra, para cada
     frase, o que o Whisper escreveu e o que a assistente fez.
 
@@ -28,7 +28,7 @@ from .utilitarios_voz import log
     falha, no microfone falha), mas não prova que funcione com a sua voz.
 '''
 
-# (o que a Razo fala, o que a assistente deve fazer)
+# (o que a Dora fala, o que a assistente deve fazer)
 #   "ignorar":  não é com ela        "chamado": só foi chamada
 #   "conversa": respondeu conversando    outro nome: o comando executado
 CASOS = [
@@ -57,19 +57,13 @@ def _falar_para_arquivo(voz, texto, caminho):
 
     from . import sintetizador_voz
 
-    configuracao = sintetizador_voz._montar_configuracao(voz, None)
-
-    pcm = b"".join(
-        trecho.audio_int16_bytes
-        for trecho in voz.synthesize(texto, configuracao)
-    )
-
-    silencio = b"\x00\x00" * int(voz.config.sample_rate * 0.4)
+    pcm = b"".join(pcm for _, pcm in sintetizador_voz._sintetizar(voz, texto))
+    silencio = b"\x00\x00" * int(voz.sample_rate * 0.4)
 
     with wave.open(caminho, "wb") as arquivo:
         arquivo.setnchannels(1)
         arquivo.setsampwidth(2)
-        arquivo.setframerate(voz.config.sample_rate)
+        arquivo.setframerate(voz.sample_rate)
         arquivo.writeframes(silencio + pcm + silencio)
 
 
@@ -126,7 +120,7 @@ def executar_autoteste():
 
     acertos = chamados = chamadas_esperadas = 0
 
-    print(f"\n{'a Razo falou':36} | {'o Whisper escreveu':38} | resultado")
+    print(f"\n{'a Dora falou':36} | {'o Whisper escreveu':38} | resultado")
     print("-" * 110)
 
     with mock.patch("webbrowser.open"), \

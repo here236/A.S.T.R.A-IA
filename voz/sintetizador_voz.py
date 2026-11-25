@@ -12,9 +12,9 @@ from .utilitarios_voz import log
     Responsabilidade:
     Transformar resposta em áudio
 
-    Motor: Piper (voz neural), 100% offline: nada do que a assistente
+    Motor: Kokoro-82M ONNX (voz neural), 100% offline: nada do que a assistente
     fala sai do computador, e nenhum áudio é gravado em arquivo (RN08).
-    A voz (Razo, por padrão) é baixada uma única vez com:
+    A voz (pf_dora) é baixada uma única vez com:
         python -m voz.baixar_voz
 
     Para testar a voz:
@@ -56,36 +56,52 @@ _pyaudio = None
 
 # VOZ
 
-def _importar_piper():
-    """
-    Importa o Piper (ponto único de contato com a biblioteca; os testes
-    automatizados substituem esta função). É feito aqui dentro porque
-    importar leva tempo, e quem só quer ouvir o microfone não deveria
-    pagar esse custo.
-    """
-
+def _importar_kokoro():
     try:
-        from piper import PiperVoice
-        from piper.config import SynthesisConfig
-
-    except ImportError:
-
+        from kokoro_onnx import Kokoro
+        from misaki.espeak import EspeakG2P
+    except ImportError as erro:
         raise RuntimeError(
-            "O pacote piper-tts não está instalado. "
-            "Rode: python -m pip install -r requirements.txt"
-        )
+            "Instale as dependências: python -m pip install -r requirements.txt"
+        ) from erro
+    return Kokoro, EspeakG2P
 
-    return PiperVoice, SynthesisConfig
+
+class _VozKokoro:
+    """Adapta o motor ONNX ao fluxo de áudio PCM existente."""
+
+    sample_rate = 24000
+
+    def __init__(self, modelo, arquivo_vozes, nome, idioma):
+        Kokoro, EspeakG2P = _importar_kokoro()
+        # CPU explícita: não exige GPU nem Ollama.
+        os.environ["ONNX_PROVIDER"] = "CPUExecutionProvider"
+        self.motor = Kokoro(modelo, arquivo_vozes)
+        self.g2p = EspeakG2P(language=idioma)
+        self.nome = nome
+
+    def sintetizar(self, texto, velocidade, volume):
+        import numpy as np
+        fonemas, _ = self.g2p(texto)
+        if not fonemas:
+            return
+        audio, taxa = self.motor.create(
+            fonemas, voice=self.nome, speed=velocidade, is_phonemes=True
+        )
+        pcm = (np.clip(np.asarray(audio, dtype=np.float32) * volume,
+                       -1.0, 1.0) * 32767).astype("<i2").tobytes()
+        if pcm:
+            yield taxa, pcm
 
 
 def _info_da_voz(nome):
 
     try:
-        return configuracoes_voz.VOZES_PIPER[nome]
+        return configuracoes_voz.VOZES_KOKORO[nome]
 
     except KeyError:
 
-        disponiveis = ", ".join(configuracoes_voz.VOZES_PIPER)
+        disponiveis = ", ".join(configuracoes_voz.VOZES_KOKORO)
 
         raise VozNaoEncontradaError(
             f"A voz '{nome}' não existe. Vozes disponíveis: {disponiveis}"
@@ -94,7 +110,7 @@ def _info_da_voz(nome):
 
 def _caminhos_da_voz(nome):
     """
-    Devolve (arquivo do modelo, arquivo de configuração) da voz.
+    Devolve (arquivo do modelo, arquivo de vozes) da voz.
     """
 
     info = _info_da_voz(nome)
@@ -103,7 +119,7 @@ def _caminhos_da_voz(nome):
 
     return (
         os.path.join(pasta, info["modelo"]),
-        os.path.join(pasta, info["config"])
+        os.path.join(pasta, info["vozes"])
     )
 
 
@@ -135,16 +151,15 @@ def carregar_voz(nome=None):
                 "    python -m voz.baixar_voz"
             )
 
-        PiperVoice, _ = _importar_piper()
-
         log(f"Carregando a voz '{nome}'...")
-
         inicio = time.perf_counter()
-
-        # A configuração é passada explicitamente porque no repositório
-        # da voz o arquivo se chama config.json, e não <modelo>.onnx.json
-        # (que é o nome que o Piper procuraria sozinho).
-        _vozes[nome] = PiperVoice.load(modelo, config_path=configuracao)
+        try:
+            _vozes[nome] = _VozKokoro(modelo, configuracao, nome, _info_da_voz(nome)["idioma"])
+        except Exception as erro:
+            raise VozNaoEncontradaError(
+                f"Não foi possível carregar o Kokoro: {erro}. "
+                "Verifique as dependências e rode python -m voz.baixar_voz."
+            ) from erro
 
         log(f"Voz carregada em {time.perf_counter() - inicio:.1f}s.")
 
@@ -159,7 +174,7 @@ def listar_vozes():
 
     vozes = []
 
-    for nome, info in configuracoes_voz.VOZES_PIPER.items():
+    for nome, info in configuracoes_voz.VOZES_KOKORO.items():
 
         modelo, configuracao = _caminhos_da_voz(nome)
 
@@ -190,23 +205,9 @@ def _fator_de_velocidade(velocidade):
     return max(VELOCIDADE_MIN, min(VELOCIDADE_MAX, velocidade))
 
 
-def _montar_configuracao(voz, velocidade):
-    """
-    Monta a configuração de síntese. No Piper a velocidade é o inverso
-    de "length_scale" (menor = mais rápido), aplicado sobre o valor
-    próprio daquela voz.
-    """
-
-    _, SynthesisConfig = _importar_piper()
-
-    base = getattr(voz.config, "length_scale", None) or 1.0
-
+def _sintetizar(voz, texto, velocidade=None):
     volume = max(0.0, min(1.0, float(configuracoes_voz.VOLUME_FALA)))
-
-    return SynthesisConfig(
-        length_scale=base / _fator_de_velocidade(velocidade),
-        volume=volume
-    )
+    return voz.sintetizar(texto, _fator_de_velocidade(velocidade), volume)
 
 
 # SAÍDA DE ÁUDIO
@@ -423,7 +424,7 @@ def _aplicar_limite(frases):
 
 # FALAR
 
-def falar(texto, velocidade=None, voz=None):
+def _falar(texto, velocidade=None, voz=None):
     """
     Fala o texto em voz alta e só retorna quando termina de falar (ou
     quando parar() é chamada). Isso é proposital: enquanto a assistente
@@ -431,7 +432,7 @@ def falar(texto, velocidade=None, voz=None):
     a própria voz.
 
     velocidade: 1.0 é o normal. Se None, usa VELOCIDADE_FALA.
-    voz:        nome de uma voz de VOZES_PIPER. Se None, usa VOZ_TTS.
+    voz:        nome de uma voz de VOZES_KOKORO. Se None, usa VOZ_TTS.
 
     Devolve True se falou algo (inteiro ou até ser interrompido); False
     se o texto era vazio ou se ocorreu algum erro (que fica no log).
@@ -456,9 +457,7 @@ def falar(texto, velocidade=None, voz=None):
 
     try:
 
-        piper = carregar_voz(voz)
-
-        configuracao = _montar_configuracao(piper, velocidade)
+        motor = carregar_voz(voz)
 
         for numero, frase in enumerate(frases):
 
@@ -477,16 +476,16 @@ def falar(texto, velocidade=None, voz=None):
                     interrompida = True
                     break
 
-            # O Piper devolve um trecho de áudio por frase, conforme
-            # termina de sintetizar: dá para começar a tocar o primeiro
-            # sem esperar o resto.
-            for trecho in piper.synthesize(frase, configuracao):
+            for taxa_trecho, pcm in _sintetizar(motor, frase, velocidade):
+                if _parar.is_set():
+                    interrompida = True
+                    break
 
                 if saida is None:
 
                     # A saída só é aberta quando já existe áudio para
                     # tocar (um erro de síntese não mexe na placa de som).
-                    taxa = trecho.sample_rate
+                    taxa = taxa_trecho
                     saida = _criar_saida(taxa)
 
                 if primeiro_som is None:
@@ -494,7 +493,7 @@ def falar(texto, velocidade=None, voz=None):
 
                 falou = True
 
-                if not _tocar(saida, trecho.audio_int16_bytes):
+                if not _tocar(saida, pcm):
                     interrompida = True
                     break
 
@@ -527,6 +526,15 @@ def falar(texto, velocidade=None, voz=None):
     return falou
 
 
+_trava_fala = threading.Lock()
+
+
+def falar(texto, velocidade=None, voz=None):
+    # Serializa chamadas concorrentes sem impedir parar() de outra thread.
+    with _trava_fala:
+        return _falar(texto, velocidade, voz)
+
+
 def _fechar_saida(saida, abortar):
     """
     Fecha a saída de áudio. Se abortar for False, antes espera o que já
@@ -552,7 +560,7 @@ def _fechar_saida(saida, abortar):
 def parar():
     """
     Interrompe a fala em andamento (de qualquer thread). A voz é cortada
-    em menos de meio segundo.
+    entre blocos de reprodução. A inferência em andamento pode precisar terminar.
     """
 
     _parar.set()
@@ -641,7 +649,7 @@ if __name__ == "__main__":
 
     parser.add_argument("texto", nargs="?", help="texto a ser falado")
     parser.add_argument("--listar", action="store_true", help="só mostra as vozes configuradas")
-    parser.add_argument("--voz", help="nome da voz (uma das configuradas em VOZES_PIPER)")
+    parser.add_argument("--voz", help="nome da voz (uma das configuradas em VOZES_KOKORO)")
     parser.add_argument("--velocidade", type=float, help="1.0 = normal, 0.8 = mais devagar, 1.3 = mais rápido")
     parser.add_argument("--repetir", type=int, metavar="N", help="fala N vezes seguidas (teste de estabilidade)")
     parser.add_argument("--teste-parar", action="store_true", help="testa a interrupção da fala")

@@ -1,131 +1,48 @@
+"""Baixa os arquivos ONNX uma vez e verifica a síntese local."""
 import argparse
 import os
-
-from configs import configuracoes_voz
+from urllib.request import urlopen, Request
+import shutil
+from configs import configuracoes_voz as config
 from .utilitarios_voz import log
-
-'''
-    Baixa a voz da assistente (Piper) para o computador.
-
-    Rode UMA vez por máquina, com internet:
-
-        python -m voz.baixar_voz
-
-    Depois disso a voz funciona 100% offline: o programa carrega os
-    arquivos da pasta "modelos/voz/" e nunca mais acessa a rede.
-    A voz usada é definida em configs/configuracoes_voz.py (VOZ_TTS).
-'''
 
 
 def baixar_voz(nome=None):
-
-    nome = nome or configuracoes_voz.VOZ_TTS
-
-    info = configuracoes_voz.VOZES_PIPER.get(nome)
-
+    nome = nome or config.VOZ_TTS
+    info = config.VOZES_KOKORO.get(nome)
     if info is None:
-
-        log(
-            f"Voz '{nome}' desconhecida. "
-            f"Opções: {', '.join(configuracoes_voz.VOZES_PIPER)}",
-            "ERRO"
-        )
+        log(f"Voz desconhecida: {nome}. Use {config.VOZ_TTS}.", "ERRO")
         return False
-
-    destino = os.path.join(configuracoes_voz.PASTA_VOZES, nome)
-
-    modelo = os.path.join(destino, info["modelo"])
-    configuracao = os.path.join(destino, info["config"])
-
-    if os.path.isfile(modelo) and os.path.isfile(configuracao):
-
-        log(f"A voz '{nome}' já está baixada em: {destino}")
-        return _verificar(nome)
-
-    # Importado aqui para o erro, se o pacote não estiver instalado,
-    # aparecer com uma mensagem clara em vez de quebrar o import.
+    pasta = os.path.join(config.PASTA_VOZES, nome)
     try:
-        from huggingface_hub import snapshot_download
-
-    except ImportError:
-
-        log(
-            "Pacote 'huggingface_hub' não encontrado. "
-            "Rode: python -m pip install -r requirements.txt",
-            "ERRO"
-        )
-        return False
-
-    os.makedirs(destino, exist_ok=True)
-
-    log(
-        f"Baixando a voz '{nome}' ({info['repositorio']}) para: {destino}\n"
-        "São cerca de 65 MB e não aparece barra de progresso. "
-        "Aguarde até aparecer a mensagem final."
-    )
-
-    try:
-
-        snapshot_download(
-            info["repositorio"],
-            revision=info["revisao"],
-            local_dir=destino,
-            allow_patterns=[info["modelo"], info["config"]]
-        )
-
+        os.makedirs(pasta, exist_ok=True)
+        for arquivo in (info["modelo"], info["vozes"]):
+            destino = os.path.join(pasta, arquivo)
+            if os.path.isfile(destino) and os.path.getsize(destino) > 0:
+                continue
+            url = f"https://github.com/{info['repositorio']}/releases/download/{info['revisao']}/{arquivo}"
+            temporario = destino + ".part"
+            log(f"Baixando {arquivo}...")
+            try:
+                with urlopen(Request(url, headers={"User-Agent": "ASTRA"}), timeout=120) as origem, open(temporario, "wb") as saida:
+                    shutil.copyfileobj(origem, saida)
+                os.replace(temporario, destino)
+            finally:
+                if os.path.exists(temporario):
+                    os.remove(temporario)
+        from . import sintetizador_voz as st
+        voz = st.carregar_voz(nome)
+        total = sum(len(pcm) / 2 / taxa for taxa, pcm in st._sintetizar(voz, "Olá, eu sou a Astra."))
+        if total <= 0:
+            raise RuntimeError("Nenhum áudio gerado.")
+        log(f"Voz {nome} verificada: {total:.1f}s de áudio.")
+        return True
     except Exception as erro:
-
-        log(f"Falha no download: {erro}", "ERRO")
-        log("Verifique sua conexão com a internet e tente de novo.", "ERRO")
+        log(f"Falha ao baixar ou verificar Kokoro: {erro}", "ERRO")
         return False
-
-    if not (os.path.isfile(modelo) and os.path.isfile(configuracao)):
-
-        log("O download terminou, mas os arquivos da voz não apareceram.", "ERRO")
-        return False
-
-    log("Voz baixada.")
-
-    return _verificar(nome)
-
-
-def _verificar(nome):
-    """
-    Carrega a voz e sintetiza uma frase (sem tocar nada), para confirmar
-    já agora que ela funciona neste computador.
-    """
-
-    from . import sintetizador_voz
-
-    try:
-
-        voz = sintetizador_voz.carregar_voz(nome)
-
-        amostras = sum(
-            len(trecho.audio_int16_bytes) // 2
-            for trecho in voz.synthesize("Olá, eu sou a Astra.")
-        )
-
-        segundos = amostras / voz.config.sample_rate
-
-    except Exception as erro:
-
-        log(f"A voz foi baixada, mas não funcionou: {erro}", "ERRO")
-        return False
-
-    if segundos <= 0:
-
-        log("A voz carregou, mas não gerou nenhum áudio.", "ERRO")
-        return False
-
-    log(f"Voz verificada: gerou {segundos:.1f}s de áudio. Pronta para usar.")
-
-    return True
 
 
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(description="Baixa a voz da A.S.T.R.A.")
-    parser.add_argument("--voz", help="nome da voz (padrão: VOZ_TTS da configuração)")
-
-    baixar_voz(parser.parse_args().voz)
+    parser = argparse.ArgumentParser(description="Baixa Kokoro para a ASTRA")
+    parser.add_argument("--voz", default=config.VOZ_TTS)
+    raise SystemExit(0 if baixar_voz(parser.parse_args().voz) else 1)
